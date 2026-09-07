@@ -1,2 +1,0 @@
-DBX Apache OpenDAL connection test fixture.
-write read stat list delete copy rename

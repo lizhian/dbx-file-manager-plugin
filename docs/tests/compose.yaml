@@ -8,6 +8,11 @@ services:
       ADDRESS: 127.0.0.1
       MIN_PORT: 21100
       MAX_PORT: 21109
+    # Keep the server itself alive instead of the image's PID-selection wrapper.
+    command:
+      - sh
+      - -ec
+      - exec vsftpd /etc/vsftpd/vsftpd.conf -obackground=NO -opasv_min_port=$$MIN_PORT -opasv_max_port=$$MAX_PORT -opasv_address=$$ADDRESS
     ports:
       - "127.0.0.1:2121:21"
       - "127.0.0.1:21100-21109:21100-21109"

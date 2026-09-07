@@ -1,8 +1,0 @@
-{
-  "name": "dbx-file-manager-metadata-tests",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node --test *.test.mjs" },
-  "engines": { "node": ">=22" },
-  "devDependencies": { "ajv": "8.17.1", "smol-toml": "1.4.2", "yaml": "2.8.1" }
-}
