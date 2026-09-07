@@ -1,0 +1,52 @@
+services:
+  namenode:
+    build:
+      context: ./hadoop-native
+    image: dbx-file-manager-hadoop-native:3.4.3
+    pull_policy: never
+    hostname: namenode
+    command:
+      - bash
+      - -ec
+      - |
+        if [ ! -f /tmp/hadoop/name/current/VERSION ]; then
+          hdfs namenode -format -force -nonInteractive
+        fi
+        exec hdfs namenode
+    ports:
+      - "127.0.0.1:19100:9000"
+      - "127.0.0.1:19870:9870"
+    volumes:
+      - ./config/hadoop/server/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./config/hadoop/server/hdfs-native-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - native-name:/tmp/hadoop/name
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9870/jmx"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+  datanode:
+    image: dbx-file-manager-hadoop-native:3.4.3
+    pull_policy: never
+    hostname: datanode
+    command: ["hdfs", "datanode"]
+    depends_on:
+      namenode:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19866:19866"
+      - "127.0.0.1:19864:19864"
+    volumes:
+      - ./config/hadoop/server/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./config/hadoop/server/hdfs-native-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - native-data:/tmp/hadoop/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:19864/jmx"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+volumes:
+  native-name:
+  native-data:

@@ -1,0 +1,25 @@
+name: Validate plugin metadata
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
+      - run: node scripts/validate-manifest.mjs
+      - run: node --test tests/*.test.mjs
+      - run: bash -n tests/fixtures/file-manager/setup.sh
+      - run: docker compose -f tests/fixtures/file-manager/compose.yaml config --quiet

@@ -1,0 +1,17 @@
+/dist/
+/.idea/
+/docs/evidence/*
+!/docs/evidence/README.md
+.dbx-repository-signing-key.env
+.DS_Store
+*.log
+**/target/
+**/node_modules/
+**/runtime/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+id_rsa*

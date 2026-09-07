@@ -1,0 +1,21 @@
+OpenDAL File Manager plugin
+Copyright 2026 lizhian and contributors
+
+This product includes material derived from DBX, licensed under the
+Apache License, Version 2.0. See LICENSE for the retained license text.
+Upstream: https://github.com/lizhian/dbx
+File-manager source: feat/issue-16-opendal-file-manager-mvp
+Source commit: 149488ba1a6244d5ca9528eedf90481bc99fbf3d
+Imported source directory: deploy/file-manager
+Local destination: tests/fixtures/file-manager
+
+The manifest schema is derived from DBX host source commit
+c26ff3f6d4bd643be8dedd659c3236af4a5bd556, plugins/manifest.schema.json,
+with the coordinated Host API 1.1 filesystem capability enum extension
+from the host working tree (2026-09-06; not a committed release).
+The source file-manager commit contains LICENSE but no root NOTICE.
+This NOTICE records provenance; it is not an upstream NOTICE reproduction.
+
+Fixture documentation and setup are adapted for this independent plugin.
+Fixture service checks do not constitute plugin or host acceptance.
+Apache OpenDAL and other dependencies retain their respective licenses.
