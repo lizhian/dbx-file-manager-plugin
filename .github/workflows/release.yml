@@ -1,135 +1,28 @@
-name: Release DBX plugin
-
+name: Build macOS ARM plugin
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing version tag to rebuild without moving it
-        required: true
-        type: string
-
 permissions:
   contents: read
-
-concurrency:
-  group: plugin-release-${{ inputs.tag || github.ref_name }}
-  cancel-in-progress: false
-
-env:
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-
 jobs:
-  validate:
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: tests/package-lock.json
-      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
-      - run: GITHUB_REF_NAME="$RELEASE_TAG" node scripts/release-artifacts.mjs check-tag
-      - run: node --test tests/*.test.mjs
-
-  build:
-    needs: validate
-    name: Build ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {runner: ubuntu-24.04, target: linux-x64}
-          - {runner: ubuntu-24.04-arm, target: linux-arm64}
-          - {runner: windows-2022, target: windows-x64}
-          - {runner: macos-15-intel, target: darwin-x64}
-          - {runner: macos-15, target: darwin-arm64}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    env:
-      CARGO_BUILD_JOBS: '4'
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Preserve source bytes on Windows
-        if: runner.os == 'Windows'
-        run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
-      - uses: ilammy/setup-nasm@v1
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-      - name: Pin the MSVC linker ahead of Git Bash link.exe
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $linker = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
-          if (!(Test-Path $linker)) { throw "MSVC linker not found: $linker" }
-          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
-      - name: Linux build dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev unzip
-      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
-      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --ignore-scripts --no-audit --no-fund
-      - name: Build using the official native CLI
-        env:
-          DBX_PLUGIN_TARGET: ${{ matrix.target }}
-        run: node scripts/package.mjs --target "$DBX_PLUGIN_TARGET"
-      - name: Verify target artifact
-        env:
-          DBX_PLUGIN_TARGET: ${{ matrix.target }}
-        run: GITHUB_REF_NAME="$RELEASE_TAG" node scripts/release-artifacts.mjs check-target
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: cargo test --locked --manifest-path backend/Cargo.toml
+      - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: dbx-plugin-${{ matrix.target }}
-          if-no-files-found: error
-          retention-days: 7
+          name: darwin-arm64-unsigned
           path: |
             dist/*.dbxp
             dist/*.artifact.json
-
-  publish:
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: dbx-plugin-*
-          path: release-assets
-          merge-multiple: true
-      - name: Validate all five targets and merge metadata
-        run: GITHUB_REF_NAME="$RELEASE_TAG" node scripts/release-artifacts.mjs merge
-      - name: Publish complete unsigned release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes --notes "Unsigned development packages. Requires the adapted DBX Host API 1.1 host. Windows SFTP is unsupported. Multi-platform builds do not imply full runtime acceptance."
-          fi
-          gh release upload "$RELEASE_TAG" release-assets/*.dbxp release-assets/*.artifact.json release-assets/release-candidates.json --clobber
-          if [[ "$RELEASE_TAG" == *-* ]]; then
-            gh release edit "$RELEASE_TAG" --draft=false --prerelease
-          else
-            gh release edit "$RELEASE_TAG" --draft=false
-          fi
+          if-no-files-found: error

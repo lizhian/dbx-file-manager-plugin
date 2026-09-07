@@ -1,0 +1,74 @@
+# 文件管理插件
+
+## 当前验收状态
+
+`0.2.0` 已构建并安装到原版 `c26ff3f` 宿主，插件中心显示兼容，安装后的 UI 与构建产物一致。
+40 项 Rust 单元测试、12 项前端测试通过；独立六协议实测覆盖上传、列表、文本保存、重命名、下载比对、图片识别与清理，全部通过。
+浏览器以模拟桥接验证文本保存请求、PNG 解码，以及桌面和 390px 窄屏布局，无横向溢出；这不代替原生宿主验收。
+
+**宿主集成尚未完成**：从连接打开 Tab 后，宿主显示 `The object can not be cloned.`。
+`PluginWorkbenchHost.vue` 将 Vue 响应式 `props.context` 传给 `PluginHostBridge`，后者在 `pluginHostBridge.ts:455` 直接调用 `structuredClone`；Proxy 无法克隆。
+异常发生在创建 iframe 前，插件代码尚未运行，无法由插件修复。宿主源码保持未修改；原生上传下载对话框、多 Tab 内容隔离与实际图片渲染尚未完成宿主验收。
+
+已有宿主源码时，可只读复现：`node scripts/check-host.mjs`，当前返回非零及 `BLOCKED`。
+发给上游作者的完整复现、根因和修复建议见[宿主阻塞报告](UPSTREAM-HOST-BLOCKERS.md)。
+需要上游修复 Workbench 上下文克隆后才能完成原生验收；本文“使用”描述预期使用流程，不表示当前宿主已可用。
+
+## 使用
+
+面向 macOS Apple Silicon，兼容官方 DBX Host API 1.0，不需要宿主补丁。
+在插件中心允许安装未签名开发包并安装 `dist/*.dbxp`，然后在宿主新建 FTP、SFTP、S3、WebDAV、WebHDFS 或 HDFS Native 连接。
+从连接列表打开：一个连接一个宿主 Tab，重复打开激活已有 Tab；连接与凭据由宿主管理。
+
+当前宿主 `c26ff3f` 的连接保存流程会清空插件 `external_config`（`ConnectionDialog.vue` 的通用清理分支）。
+为免修改宿主，本插件将协议专属配置字段也绑定到宿主 Secret Store；两个布尔配置采用“是/否”选项。
+后端仍兼容旧 `external_config`，同名 Secret Store 值优先。旧连接首次编辑时需重新核对协议专属配置。
+
+页面支持目录浏览、分页、新建目录、重命名、删除、上传下载、图片预览和 UTF-8 文本编辑。
+上传/下载弹出 macOS 原生文件对话框。协议不支持或只读连接的操作会禁用。
+
+## 构建与测试
+
+需要 Node.js 22+、Rust 和 macOS 自带 OpenSSH。依赖安装使用锁文件，官方原生打包 CLI 随 npm 可选依赖安装。
+
+```bash
+npm ci
+npm test
+npm run build
+npm run validate
+cargo test --locked --manifest-path backend/Cargo.toml
+npm run package
+```
+
+构建输出 `dist/io.github.lizhian.file-manager-0.2.0-darwin-arm64.dbxp`。
+若需要代理，参见[宿主开发指南](HOST-DEVELOPMENT.md)。无需设置 `DBX_PLUGIN_SDK_ROOT`；后端已经固定官方 SDK Git 提交。
+
+复用[六协议环境](tests/README.md)执行真实读写测试：
+
+```bash
+no_proxy=localhost,127.0.0.1,::1 NO_PROXY=localhost,127.0.0.1,::1 \
+  cargo test --locked --manifest-path backend/Cargo.toml live_workbench_six_protocols -- --ignored --nocapture
+```
+
+测试使用随机目录，覆盖上传、列表、文本保存、重命名、下载比对、图片识别和清理；失败可能留下带 `dbx-workbench-` 前缀的测试目录。
+`npm run dev` 可启动前端开发服务器，但文件操作需要宿主注入桥接；独立浏览器不是可连接远程服务的替代入口。
+
+## 代码入口
+
+- `frontend/src/`：Vue 自定义页面、连接内状态和 API 1.0 桥接；不导入宿主源码。
+- `backend/src/workbench.rs`：预览快照、分块文本保存、本地文件选择授权；`operations.rs` / `transfer.rs` 复用协议操作和流式传输。
+- `manifest.json`：六种连接字段与统一 Workbench；`tests/schema/manifest.schema.json` 保持官方 `c26ff3f` Schema 原样。
+- `ui/`：构建生成的内联 HTML，避免沙箱加载外部脚本；`scripts/package.mjs` 调用官方原生 CLI。
+
+自定义 RPC 使用 `workbench/*`，返回 `{ok,value}` 或 `{ok:false,error}`，避免宿主字符串错误丢失冲突类型。
+请求必须携带宿主连接 ID 和匹配的 provider ID；本地路径只由原生对话框授权令牌传递，预览与草稿令牌绑定连接代次。
+图片/文本通过 512 KiB 分块传输，避免宿主单次 JSON 请求 2 MiB 上限。
+
+## 首版限制
+
+- 文本限 UTF-8、2 MiB；PNG/JPEG/GIF/WebP 限 20 MiB。HTML/XML/SVG 只作为文本显示，不执行、不渲染。
+- 保存优先使用条件 ETag；不支持条件写的协议先比较完整内容，再写入，无法消除其他客户端在检查与写入之间的竞争。覆盖操作需要明确确认。
+- 文本直接写入远端；写入超时或断连时结果可能不确定，应重新下载检查，不盲目重试。
+- 预览/草稿保留在内存，30 分钟过期；不写磁盘。宿主关闭 Tab 无法拦截，关闭前需要保存。
+- 仅删除文件和空目录；目录重命名可能采用复制后删除，失败时需检查两端。无远程复制入口、递归上传下载、断点续传、图片编辑、Kerberos 或 HDFS HA。
+- FTP 明文；SFTP 依赖 OpenSSH，首次接受未知主机密钥，仅在可信环境使用。

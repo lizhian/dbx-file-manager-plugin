@@ -1,4 +1,6 @@
 /dist/
+/ui/
+/test-results/
 /runtime/
 /.idea/
 /docs/evidence/*

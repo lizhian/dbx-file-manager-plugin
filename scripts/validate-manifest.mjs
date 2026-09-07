@@ -1,0 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import Ajv from 'ajv/dist/2020.js';
+const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url)));
+const schema = JSON.parse(await readFile(new URL('../tests/schema/manifest.schema.json', import.meta.url)));
+const validate = new Ajv({ allErrors: true, strict: false }).compile(schema);
+if (!validate(manifest)) throw new Error(JSON.stringify(validate.errors, null, 2));
+if (manifest.engines.host_api !== '>=1.0.0, <2.0.0') throw new Error('Host API must remain compatible with 1.0');
+if (manifest.contributions.some(c => c.fields?.some(f => f.binding === 'config'))) throw new Error('Host c26ff3f drops config bindings on save; use the documented secret-store compatibility binding');
+console.log('PASS: official Host API 1.0 manifest schema');

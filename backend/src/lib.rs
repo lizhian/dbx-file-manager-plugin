@@ -5,6 +5,7 @@ mod session;
 mod transfer;
 mod uri;
 mod webdav;
+mod workbench;
 
 use config::ConnectionRequest;
 pub use config::PLUGIN_ID;
@@ -28,6 +29,7 @@ pub struct Plugin {
     descriptors: Mutex<HashMap<String, Arc<ConnectionRequest>>>,
     lifecycle: Arc<tokio::sync::Mutex<()>>,
     transfers: transfer::Transfers,
+    workbench: workbench::State,
     stopping: AtomicBool,
     generation: AtomicU64,
     maintenance_stop: tokio_util::sync::CancellationToken,
@@ -71,6 +73,7 @@ impl Plugin {
             descriptors: Mutex::new(HashMap::new()),
             lifecycle,
             transfers: transfer::Transfers::default(),
+            workbench: workbench::State::default(),
             stopping: AtomicBool::new(false),
             generation: AtomicU64::new(0),
             maintenance_stop,
@@ -208,8 +211,84 @@ impl Plugin {
         params: Value,
         emitter: Option<PluginEmitter>,
     ) -> Result<Value> {
+        if let Some(method) = method.strip_prefix("workbench/") {
+            let result = self
+                .runtime
+                .block_on(self.workbench_call(method, params, emitter));
+            return Ok(match result {
+                Ok(value) => json!({"ok": true, "value": value}),
+                Err(e) => json!({"ok": false, "error": {"message": e.message, "details": e.data}}),
+            });
+        }
         self.runtime
             .block_on(self.dispatch(method, params, emitter))
+    }
+
+    async fn workbench_call(
+        &self,
+        method: &str,
+        params: Value,
+        emitter: Option<PluginEmitter>,
+    ) -> Result<Value> {
+        let (s, _activity) = self.session(&params).await?;
+        if self.stopping.load(Ordering::SeqCst) {
+            return Err(error("unavailable", "Sidecar is shutting down"));
+        }
+        if method == "chooseLocal" {
+            return tokio::select! {
+                _ = s.closed.cancelled() => Err(error("not_connected", "Connection closed")),
+                result = self.workbench.choose(&s, &params) => result,
+            };
+        }
+        if method == "startTransfer" {
+            let mut p = params.clone();
+            let (path, upload) = self.workbench.local(&s, &p)?;
+            p["localPath"] = json!(path);
+            // The path is selected by a native dialog, never supplied by iframe JavaScript.
+            if upload {
+                let path = uri::path(text(&p, "uri")?, &s.protocol)?;
+                operations::destination(&s.operator, &path, error::flag(&p, "overwrite", false)?)
+                    .await?;
+            }
+            return self.transfers.start(s, upload, &p, emitter);
+        }
+        if matches!(
+            method,
+            "preview" | "previewChunk" | "stageText" | "saveText" | "releasePreview"
+        ) {
+            let operation = async {
+                let _gate = s.gate.read().await;
+                s.available()?;
+                let _connection = s
+                    .permits
+                    .acquire()
+                    .await
+                    .map_err(|_| error("unavailable", "Connection unavailable"))?;
+                let _global = self
+                    .transfers
+                    .global
+                    .acquire()
+                    .await
+                    .map_err(|_| error("unavailable", "Operation unavailable"))?;
+                self.workbench.remote(&s, method, &params).await
+            };
+            let timeout = s.operation_timeout.unwrap_or(Duration::from_secs(120));
+            return tokio::select! {
+                _ = s.closed.cancelled() => Err(error("not_connected", "Connection closed")),
+                result = tokio::time::timeout(timeout, operation) => result.map_err(|_| error("timeout", "Remote operation timed out; inspect the file before retrying"))?,
+            };
+        }
+        match method {
+            "capabilities" | "list" | "stat" | "createDirectory" | "delete" | "rename" => {
+                self.dispatch(&format!("filesystem/{method}"), params, emitter)
+                    .await
+            }
+            "transfer/list" | "transfer/status" | "transfer/cancel" => {
+                self.dispatch(&format!("filesystem/{method}"), params, emitter)
+                    .await
+            }
+            _ => Err(error("unsupported", "Unknown workbench operation")),
+        }
     }
 
     async fn dispatch(

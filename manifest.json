@@ -3,17 +3,28 @@
   "manifest_version": 1,
   "id": "io.github.lizhian.file-manager",
   "name": "OpenDAL File Manager",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "lizhian",
-  "description": "Six remote filesystem providers for the DBX host-owned file manager. Migration in progress.",
+  "description": "六协议文件管理：目录浏览、文件传输、图片预览和文本编辑。",
   "icon": "assets/plugin.svg",
-  "engines": { "dbx": ">=0.5.68", "host_api": ">=1.1.0, <2.0.0" },
-  "permissions": ["host.events"],
+  "engines": {
+    "dbx": ">=0.5.68",
+    "host_api": ">=1.0.0, <2.0.0"
+  },
+  "permissions": [
+    "host.events"
+  ],
   "entrypoints": {
     "backend": {
       "executable": "bin/dbx-plugin-dbx-file-manager-plugin",
       "transport": "stdio-framed",
-      "protocol_versions": [1]
+      "protocol_versions": [
+        1
+      ]
+    },
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
     }
   },
   "contributions": [
@@ -24,24 +35,59 @@
       "icon": "assets/plugin.svg",
       "database_type": "ftp",
       "description": "Warning: FTP sends credentials and file data in plaintext. Use only on trusted networks.",
-      "filesystem_provider": "io.github.lizhian.file-manager.ftp.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "FTP" },
-        { "key": "host", "label": "Host", "type": "text", "binding": "host", "required": true },
-        { "key": "port", "label": "Port", "type": "number", "binding": "port", "required": true, "default": 21 },
-        { "key": "username", "label": "Username", "type": "text", "binding": "username", "required": true },
-        { "key": "password", "label": "Password", "type": "password", "binding": "secret", "required": false },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" }
-      ]
-    },
-    {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.ftp.files",
-      "label": "FTP files",
-      "schemes": ["ftp"],
-      "root_uri": "ftp:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "FTP"
+        },
+        {
+          "key": "host",
+          "label": "Host",
+          "type": "text",
+          "binding": "host",
+          "required": true
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "type": "number",
+          "binding": "port",
+          "required": true,
+          "default": 21
+        },
+        {
+          "key": "username",
+          "label": "Username",
+          "type": "text",
+          "binding": "username",
+          "required": true
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "type": "password",
+          "binding": "secret",
+          "required": false
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
       "type": "connection-provider",
@@ -50,29 +96,83 @@
       "icon": "assets/plugin.svg",
       "database_type": "sftp",
       "description": "Unix only: SFTP requires local OpenSSH. Windows SFTP acceptance is out of scope. Authentication-specific fields are validated by the backend.",
-      "filesystem_provider": "io.github.lizhian.file-manager.sftp.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "SFTP" },
-        { "key": "host", "label": "Host", "type": "text", "binding": "host", "required": true },
-        { "key": "port", "label": "Port", "type": "number", "binding": "port", "required": true, "default": 22 },
-        { "key": "username", "label": "Username", "type": "text", "binding": "username", "required": false, "description": "May be supplied by SSH config; validated by the backend for the selected authentication mode." },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" },
-        { "key": "authentication", "label": "Authentication", "type": "select", "binding": "config", "required": true, "default": "ssh_config", "options": [
-          { "label": "SSH config", "value": "ssh_config" },
-          { "label": "SSH agent", "value": "ssh_agent" },
-          { "label": "Private key", "value": "private_key" }
-        ] },
-        { "key": "private_key", "label": "Private key file", "type": "password", "binding": "secret", "required": false, "description": "Absolute local OpenSSH private-key file path on the sidecar machine, not key content. Required for private_key authentication only." }
-      ]
-    },
-    {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.sftp.files",
-      "label": "SFTP files",
-      "schemes": ["sftp"],
-      "root_uri": "sftp:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "SFTP"
+        },
+        {
+          "key": "host",
+          "label": "Host",
+          "type": "text",
+          "binding": "host",
+          "required": true
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "type": "number",
+          "binding": "port",
+          "required": true,
+          "default": 22
+        },
+        {
+          "key": "username",
+          "label": "Username",
+          "type": "text",
+          "binding": "username",
+          "required": false,
+          "description": "May be supplied by SSH config; validated by the backend for the selected authentication mode."
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "authentication",
+          "label": "Authentication",
+          "type": "select",
+          "binding": "secret",
+          "required": true,
+          "default": "ssh_config",
+          "options": [
+            {
+              "label": "SSH config",
+              "value": "ssh_config"
+            },
+            {
+              "label": "SSH agent",
+              "value": "ssh_agent"
+            },
+            {
+              "label": "Private key",
+              "value": "private_key"
+            }
+          ]
+        },
+        {
+          "key": "private_key",
+          "label": "Private key file",
+          "type": "password",
+          "binding": "secret",
+          "required": false,
+          "description": "Absolute local OpenSSH private-key file path on the sidecar machine, not key content. Required for private_key authentication only."
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
       "type": "connection-provider",
@@ -81,27 +181,92 @@
       "icon": "assets/plugin.svg",
       "database_type": "s3",
       "description": "S3 or an S3-compatible endpoint. Credentials are stored by the host Secret Store.",
-      "filesystem_provider": "io.github.lizhian.file-manager.s3.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "S3" },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" },
-        { "key": "endpoint", "label": "Endpoint", "type": "text", "binding": "config", "required": true, "description": "Explicit HTTP(S) S3 endpoint. Do not embed credentials." },
-        { "key": "region", "label": "Region", "type": "text", "binding": "config", "required": true, "default": "us-east-1" },
-        { "key": "bucket", "label": "Bucket", "type": "text", "binding": "config", "required": true },
-        { "key": "path_style", "label": "Path-style addressing", "type": "boolean", "binding": "config", "required": false, "default": false },
-        { "key": "access_key", "label": "Access key", "type": "password", "binding": "secret", "required": true },
-        { "key": "secret_key", "label": "Secret key", "type": "password", "binding": "secret", "required": true },
-        { "key": "session_token", "label": "Session token", "type": "password", "binding": "secret", "required": false }
-      ]
-    },
-    {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.s3.files",
-      "label": "S3 files",
-      "schemes": ["s3"],
-      "root_uri": "s3:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "S3"
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "endpoint",
+          "label": "Endpoint",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "Explicit HTTP(S) S3 endpoint. Do not embed credentials."
+        },
+        {
+          "key": "region",
+          "label": "Region",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "us-east-1"
+        },
+        {
+          "key": "bucket",
+          "label": "Bucket",
+          "type": "text",
+          "binding": "secret",
+          "required": true
+        },
+        {
+          "key": "path_style",
+          "label": "Path-style addressing",
+          "type": "select",
+          "binding": "secret",
+          "required": false,
+          "default": "false",
+          "options": [
+            {
+              "label": "是",
+              "value": "true"
+            },
+            {
+              "label": "否",
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "key": "access_key",
+          "label": "Access key",
+          "type": "password",
+          "binding": "secret",
+          "required": true
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret key",
+          "type": "password",
+          "binding": "secret",
+          "required": true
+        },
+        {
+          "key": "session_token",
+          "label": "Session token",
+          "type": "password",
+          "binding": "secret",
+          "required": false
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
       "type": "connection-provider",
@@ -110,28 +275,80 @@
       "icon": "assets/plugin.svg",
       "database_type": "webdav",
       "description": "WebDAV Basic/Bearer authentication. Use HTTPS outside local fixtures. Authentication-specific fields are validated by the backend.",
-      "filesystem_provider": "io.github.lizhian.file-manager.webdav.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "WebDAV" },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" },
-        { "key": "endpoint", "label": "Endpoint", "type": "text", "binding": "config", "required": true, "description": "HTTP(S) URL without embedded credentials." },
-        { "key": "authentication", "label": "Authentication", "type": "select", "binding": "config", "required": true, "default": "basic", "options": [
-          { "label": "Basic", "value": "basic" },
-          { "label": "Bearer token", "value": "bearer" }
-        ] },
-        { "key": "username", "label": "Username", "type": "text", "binding": "username", "required": false, "description": "Basic authentication only; validated by the backend." },
-        { "key": "password", "label": "Password", "type": "password", "binding": "secret", "required": false, "description": "Basic authentication only; validated by the backend." },
-        { "key": "bearer_token", "label": "Bearer token", "type": "password", "binding": "secret", "required": false, "description": "Required by the backend for Bearer authentication only." }
-      ]
-    },
-    {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.webdav.files",
-      "label": "WebDAV files",
-      "schemes": ["webdav"],
-      "root_uri": "webdav:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "WebDAV"
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "endpoint",
+          "label": "Endpoint",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "HTTP(S) URL without embedded credentials."
+        },
+        {
+          "key": "authentication",
+          "label": "Authentication",
+          "type": "select",
+          "binding": "secret",
+          "required": true,
+          "default": "basic",
+          "options": [
+            {
+              "label": "Basic",
+              "value": "basic"
+            },
+            {
+              "label": "Bearer token",
+              "value": "bearer"
+            }
+          ]
+        },
+        {
+          "key": "username",
+          "label": "Username",
+          "type": "text",
+          "binding": "username",
+          "required": false,
+          "description": "Basic authentication only; validated by the backend."
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "type": "password",
+          "binding": "secret",
+          "required": false,
+          "description": "Basic authentication only; validated by the backend."
+        },
+        {
+          "key": "bearer_token",
+          "label": "Bearer token",
+          "type": "password",
+          "binding": "secret",
+          "required": false,
+          "description": "Required by the backend for Bearer authentication only."
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
       "type": "connection-provider",
@@ -140,24 +357,72 @@
       "icon": "assets/plugin.svg",
       "database_type": "webhdfs",
       "description": "WebHDFS with simple user or a delegation token. Kerberos and HDFS HA are out of scope.",
-      "filesystem_provider": "io.github.lizhian.file-manager.webhdfs.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "WebHDFS" },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" },
-        { "key": "endpoint", "label": "Endpoint", "type": "text", "binding": "config", "required": true, "description": "HTTP(S) NameNode URL without embedded credentials or tokens." },
-        { "key": "use_delegation_token", "label": "Use delegation token", "type": "boolean", "binding": "config", "required": false, "default": false },
-        { "key": "simple_user", "label": "Simple user", "type": "text", "binding": "config", "required": false, "description": "Used when delegation tokens are disabled; validated by the backend." },
-        { "key": "delegation_token", "label": "Delegation token", "type": "password", "binding": "secret", "required": false, "description": "Required by the backend when use_delegation_token is enabled." }
-      ]
-    },
-    {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.webhdfs.files",
-      "label": "WebHDFS files",
-      "schemes": ["webhdfs"],
-      "root_uri": "webhdfs:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "WebHDFS"
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "endpoint",
+          "label": "Endpoint",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "HTTP(S) NameNode URL without embedded credentials or tokens."
+        },
+        {
+          "key": "use_delegation_token",
+          "label": "Use delegation token",
+          "type": "select",
+          "binding": "secret",
+          "required": false,
+          "default": "false",
+          "options": [
+            {
+              "label": "是",
+              "value": "true"
+            },
+            {
+              "label": "否",
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "key": "simple_user",
+          "label": "Simple user",
+          "type": "text",
+          "binding": "secret",
+          "required": false,
+          "description": "Used when delegation tokens are disabled; validated by the backend."
+        },
+        {
+          "key": "delegation_token",
+          "label": "Delegation token",
+          "type": "password",
+          "binding": "secret",
+          "required": false,
+          "description": "Required by the backend when use_delegation_token is enabled."
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
       "type": "connection-provider",
@@ -166,89 +431,232 @@
       "icon": "assets/plugin.svg",
       "database_type": "hdfs-native",
       "description": "The Hadoop configuration directory is a local path on the machine running the sidecar, not a remote HDFS path. Kerberos and HDFS HA are out of scope.",
-      "filesystem_provider": "io.github.lizhian.file-manager.hdfs-native.files",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "fields": [
-        { "key": "display_name", "label": "Connection name", "type": "text", "binding": "name", "required": true, "default": "HDFS Native" },
-        { "key": "root", "label": "Remote root", "type": "text", "binding": "config", "required": true, "default": "/" },
-        { "key": "name_node_uri", "label": "NameNode URI", "type": "text", "binding": "config", "required": true, "description": "An hdfs:// endpoint, distinct from the host navigation URI hdfs-native:/." },
-        { "key": "hadoop_config_directory", "label": "Local Hadoop configuration directory", "type": "text", "binding": "config", "required": true, "description": "Accessible absolute local directory containing core-site.xml or hdfs-site.xml, read by the sidecar. Never paste credentials here." }
-      ]
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "HDFS Native"
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "name_node_uri",
+          "label": "NameNode URI",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "An hdfs:// endpoint, distinct from the host navigation URI hdfs-native:/."
+        },
+        {
+          "key": "hadoop_config_directory",
+          "label": "Local Hadoop configuration directory",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "Accessible absolute local directory containing core-site.xml or hdfs-site.xml, read by the sidecar. Never paste credentials here."
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     },
     {
-      "type": "filesystem-provider",
-      "id": "io.github.lizhian.file-manager.hdfs-native.files",
-      "label": "HDFS Native files",
-      "schemes": ["hdfs-native"],
-      "root_uri": "hdfs-native:/",
-      "capabilities": ["list", "stat", "read", "write", "delete", "rename", "mkdir", "copy", "upload", "download"]
+      "type": "workbench",
+      "id": "io.github.lizhian.file-manager.main",
+      "label": "文件管理"
     }
   ],
   "localizations": {
     "zh-CN": {
       "name": "OpenDAL 文件管理器",
-      "description": "为 DBX 宿主文件界面提供六种协议。迁移尚未完成。",
+      "description": "六协议文件管理：目录浏览、上传下载、图片预览与文本编辑。兼容官方 Host API 1.0。",
       "contributions": {
         "io.github.lizhian.file-manager.ftp": {
-          "label": "FTP", "description": "警告：FTP 以明文传输凭据和文件数据，仅限可信网络。",
+          "label": "FTP",
+          "description": "警告：FTP 以明文传输凭据和文件数据，仅限可信网络。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "host": { "label": "主机" }, "port": { "label": "端口" },
-            "username": { "label": "用户名" }, "password": { "label": "密码" }, "root": { "label": "远程根目录" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "host": {
+              "label": "主机"
+            },
+            "port": {
+              "label": "端口"
+            },
+            "username": {
+              "label": "用户名"
+            },
+            "password": {
+              "label": "密码"
+            },
+            "root": {
+              "label": "远程根目录"
+            }
           }
         },
-        "io.github.lizhian.file-manager.ftp.files": { "label": "FTP 文件" },
         "io.github.lizhian.file-manager.sftp": {
-          "label": "SFTP", "description": "仅支持 Unix，需要本地 OpenSSH。Windows SFTP 不在验收范围内。认证条件字段由后端校验。",
+          "label": "SFTP",
+          "description": "仅支持 Unix，需要本地 OpenSSH。Windows SFTP 不在验收范围内。认证条件字段由后端校验。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "host": { "label": "主机" }, "port": { "label": "端口" },
-            "username": { "label": "用户名", "description": "可由 SSH 配置提供，后端按认证方式校验。" }, "root": { "label": "远程根目录" },
-            "authentication": { "label": "认证方式", "options": { "ssh_config": "SSH 配置", "ssh_agent": "SSH 代理", "private_key": "私钥" } },
-            "private_key": { "label": "私钥文件", "description": "填写 Sidecar 所在机器上 OpenSSH 私钥文件的绝对路径，而非私钥内容；仅私钥认证时必填。" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "host": {
+              "label": "主机"
+            },
+            "port": {
+              "label": "端口"
+            },
+            "username": {
+              "label": "用户名",
+              "description": "可由 SSH 配置提供，后端按认证方式校验。"
+            },
+            "root": {
+              "label": "远程根目录"
+            },
+            "authentication": {
+              "label": "认证方式",
+              "options": {
+                "ssh_config": "SSH 配置",
+                "ssh_agent": "SSH 代理",
+                "private_key": "私钥"
+              }
+            },
+            "private_key": {
+              "label": "私钥文件",
+              "description": "填写 Sidecar 所在机器上 OpenSSH 私钥文件的绝对路径，而非私钥内容；仅私钥认证时必填。"
+            }
           }
         },
-        "io.github.lizhian.file-manager.sftp.files": { "label": "SFTP 文件" },
         "io.github.lizhian.file-manager.s3": {
-          "label": "S3", "description": "连接 S3 或兼容端点。凭据由宿主 Secret Store 保存。",
+          "label": "S3",
+          "description": "连接 S3 或兼容端点。凭据由宿主 Secret Store 保存。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "root": { "label": "远程根目录" },
-            "endpoint": { "label": "端点", "description": "填写不含凭据的 HTTP(S) S3 端点。" },
-            "region": { "label": "区域" }, "bucket": { "label": "存储桶" }, "path_style": { "label": "路径式寻址" },
-            "access_key": { "label": "访问密钥" }, "secret_key": { "label": "秘密密钥" }, "session_token": { "label": "会话令牌" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "root": {
+              "label": "远程根目录"
+            },
+            "endpoint": {
+              "label": "端点",
+              "description": "填写不含凭据的 HTTP(S) S3 端点。"
+            },
+            "region": {
+              "label": "区域"
+            },
+            "bucket": {
+              "label": "存储桶"
+            },
+            "path_style": {
+              "label": "路径式寻址"
+            },
+            "access_key": {
+              "label": "访问密钥"
+            },
+            "secret_key": {
+              "label": "秘密密钥"
+            },
+            "session_token": {
+              "label": "会话令牌"
+            }
           }
         },
-        "io.github.lizhian.file-manager.s3.files": { "label": "S3 文件" },
         "io.github.lizhian.file-manager.webdav": {
-          "label": "WebDAV", "description": "支持 Basic 和 Bearer 认证。本地测试以外请使用 HTTPS。认证条件字段由后端校验。",
+          "label": "WebDAV",
+          "description": "支持 Basic 和 Bearer 认证。本地测试以外请使用 HTTPS。认证条件字段由后端校验。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "root": { "label": "远程根目录" },
-            "endpoint": { "label": "端点", "description": "不含凭据的 HTTP(S) URL。" },
-            "authentication": { "label": "认证方式", "options": { "basic": "Basic", "bearer": "Bearer 令牌" } },
-            "username": { "label": "用户名", "description": "仅用于 Basic 认证，由后端校验。" },
-            "password": { "label": "密码", "description": "仅用于 Basic 认证，由后端校验。" },
-            "bearer_token": { "label": "Bearer 令牌", "description": "仅 Bearer 认证时由后端要求提供。" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "root": {
+              "label": "远程根目录"
+            },
+            "endpoint": {
+              "label": "端点",
+              "description": "不含凭据的 HTTP(S) URL。"
+            },
+            "authentication": {
+              "label": "认证方式",
+              "options": {
+                "basic": "Basic",
+                "bearer": "Bearer 令牌"
+              }
+            },
+            "username": {
+              "label": "用户名",
+              "description": "仅用于 Basic 认证，由后端校验。"
+            },
+            "password": {
+              "label": "密码",
+              "description": "仅用于 Basic 认证，由后端校验。"
+            },
+            "bearer_token": {
+              "label": "Bearer 令牌",
+              "description": "仅 Bearer 认证时由后端要求提供。"
+            }
           }
         },
-        "io.github.lizhian.file-manager.webdav.files": { "label": "WebDAV 文件" },
         "io.github.lizhian.file-manager.webhdfs": {
-          "label": "WebHDFS", "description": "支持简单用户或委托令牌。不包含 Kerberos 和 HDFS HA。",
+          "label": "WebHDFS",
+          "description": "支持简单用户或委托令牌。不包含 Kerberos 和 HDFS HA。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "root": { "label": "远程根目录" },
-            "endpoint": { "label": "端点", "description": "不含凭据或令牌的 HTTP(S) NameNode URL。" },
-            "use_delegation_token": { "label": "使用委托令牌" },
-            "simple_user": { "label": "简单用户", "description": "关闭委托令牌时使用，由后端校验。" },
-            "delegation_token": { "label": "委托令牌", "description": "启用委托令牌时由后端要求提供。" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "root": {
+              "label": "远程根目录"
+            },
+            "endpoint": {
+              "label": "端点",
+              "description": "不含凭据或令牌的 HTTP(S) NameNode URL。"
+            },
+            "use_delegation_token": {
+              "label": "使用委托令牌"
+            },
+            "simple_user": {
+              "label": "简单用户",
+              "description": "关闭委托令牌时使用，由后端校验。"
+            },
+            "delegation_token": {
+              "label": "委托令牌",
+              "description": "启用委托令牌时由后端要求提供。"
+            }
           }
         },
-        "io.github.lizhian.file-manager.webhdfs.files": { "label": "WebHDFS 文件" },
         "io.github.lizhian.file-manager.hdfs-native": {
-          "label": "HDFS Native", "description": "Hadoop 配置目录是 Sidecar 所在机器的本地路径，不是远程 HDFS 路径。不包含 Kerberos 和 HDFS HA。",
+          "label": "HDFS Native",
+          "description": "Hadoop 配置目录是 Sidecar 所在机器的本地路径，不是远程 HDFS 路径。不包含 Kerberos 和 HDFS HA。",
           "fields": {
-            "display_name": { "label": "连接名称" }, "root": { "label": "远程根目录" },
-            "name_node_uri": { "label": "NameNode URI", "description": "填写 hdfs:// 端点，与宿主导航 URI hdfs-native:/ 不同。" },
-            "hadoop_config_directory": { "label": "本地 Hadoop 配置目录", "description": "由 Sidecar 读取的本地绝对路径，须含 core-site.xml 或 hdfs-site.xml，不要在此粘贴凭据。" }
+            "display_name": {
+              "label": "连接名称"
+            },
+            "root": {
+              "label": "远程根目录"
+            },
+            "name_node_uri": {
+              "label": "NameNode URI",
+              "description": "填写 hdfs:// 端点，与宿主导航 URI hdfs-native:/ 不同。"
+            },
+            "hadoop_config_directory": {
+              "label": "本地 Hadoop 配置目录",
+              "description": "由 Sidecar 读取的本地绝对路径，须含 core-site.xml 或 hdfs-site.xml，不要在此粘贴凭据。"
+            }
           }
-        },
-        "io.github.lizhian.file-manager.hdfs-native.files": { "label": "HDFS Native 文件" }
+        }
       }
     }
   }

@@ -64,7 +64,7 @@ make dev-fast
 打开该开关后，即可安装本地未签名 `.dbxp` 开发包。
 仅在开发环境启用，并只安装可信来源的包。
 
-兼容性注意：本次克隆的 `c26ff3f` 提交提供 Host API 1.0，当前文件管理插件要求 1.1。
-开启未签名包开关不会绕过 API 版本检查；宿主成功构建不等于当前插件可以直接安装。
+本插件使用 `c26ff3f` 提交的官方 Host API 1.0，自定义页面通过 Workbench 挂载到宿主 Tab。
+不需要修改宿主或应用补丁。插件构建与使用见[插件开发说明](PLUGIN-DEVELOPMENT.md)。
 
 需要本地 FTP、SFTP、S3、WebDAV 或 HDFS 服务时，按需阅读[测试环境说明](tests/README.md)。

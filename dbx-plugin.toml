@@ -6,4 +6,4 @@ directory = "backend"
 binary = "dbx-plugin-dbx-file-manager-plugin"
 
 [package]
-include = ["assets", "LICENSE", "NOTICE"]
+include = ["ui", "assets", "LICENSE", "NOTICE"]

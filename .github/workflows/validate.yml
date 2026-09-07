@@ -17,9 +17,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: tests/package-lock.json
-      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
-      - run: node scripts/validate-manifest.mjs
-      - run: node --test tests/*.test.mjs
+          cache-dependency-path: package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run validate
+      - run: npm test
+      - run: npm run build
       - run: bash -n docs/tests/setup.sh
       - run: docker compose -f docs/tests/compose.yaml config --quiet

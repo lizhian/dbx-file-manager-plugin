@@ -14,6 +14,336 @@ fn memory(read_only: bool) -> (Plugin, Arc<Session>) {
 fn params() -> Value {
     json!({"providerId": format!("{PLUGIN_ID}.ftp.files"), "connectionId": "test", "uri": "ftp:/"})
 }
+
+#[test]
+fn host_10_secret_bound_configuration_preserves_typed_legacy_support() {
+    let mut c = connection("s3");
+    c["connection"]["external_config"] = Value::Null;
+    c["connection"]["connection_secrets"] = json!({"root": "/", "endpoint": "http://127.0.0.1:9000", "region": "us-east-1", "bucket": "dbx", "path_style": "true", "access_key": "key", "secret_key": "secret"});
+    let parsed = ConnectionRequest::parse(c.clone()).unwrap();
+    assert_eq!(parsed.connection.external_config["path_style"], true);
+    assert_eq!(parsed.connection.external_config["bucket"], "dbx");
+    assert_eq!(parsed.connection.connection_secrets["secret_key"], "secret");
+    c["connection"]["connection_secrets"]["path_style"] = json!("invalid");
+    assert!(ConnectionRequest::parse(c).is_err());
+    assert_eq!(
+        ConnectionRequest::parse(connection("s3"))
+            .unwrap()
+            .connection
+            .external_config["bucket"],
+        "dbx"
+    );
+}
+
+#[test]
+#[ignore = "Writes isolated temporary files to the six existing docs/tests services"]
+fn live_workbench_six_protocols() {
+    use sha2::{Digest, Sha256};
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    let p = Plugin::new().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    let source = local.path().join("source.txt");
+    std::fs::write(&source, "live original\n").unwrap();
+    for protocol in config::PROTOCOLS {
+        let mut c = connection(protocol);
+        let (port, root) = match protocol {
+            "ftp" => (2121, "/ftp/dbx/"),
+            "sftp" => (2222, "/config/"),
+            _ => (9000, "/"),
+        };
+        c["connection"]["port"] = json!(port);
+        c["connection"]["external_config"] = json!({"root": root});
+        c["connection"]["connection_secrets"] = json!({});
+        c["runtime"] = Value::Null;
+        match protocol {
+            "ftp" => c["connection"]["connection_secrets"] = json!({"password": "dbx-password"}),
+            "sftp" => {
+                c["connection"]["external_config"]["authentication"] = json!("private_key");
+                c["connection"]["connection_secrets"] =
+                    json!({"private_key": repo.join("docs/tests/runtime/sftp/id_ed25519")});
+            }
+            "s3" => {
+                c["connection"]["external_config"] = json!({"root": "/", "endpoint": "http://127.0.0.1:9000", "region": "us-east-1", "bucket": "dbx", "path_style": true});
+                c["connection"]["connection_secrets"] =
+                    json!({"access_key": "dbx-access-key", "secret_key": "dbx-secret-key"});
+            }
+            "webdav" => {
+                c["connection"]["external_config"] = json!({"root": "/", "endpoint": "http://127.0.0.1:8080", "authentication": "basic"});
+                c["connection"]["connection_secrets"] = json!({"password": "dbx-password"});
+            }
+            "webhdfs" => {
+                c["connection"]["external_config"] =
+                    json!({"root": "/", "endpoint": "http://127.0.0.1:9870", "simple_user": "dbx"})
+            }
+            "hdfs-native" => {
+                c["connection"]["external_config"] = json!({"root": "/", "name_node_uri": "hdfs://127.0.0.1:19000", "hadoop_config_directory": repo.join("docs/tests/config/hadoop/client")})
+            }
+            _ => unreachable!(),
+        }
+        p.invoke("connection/connect", c.clone(), None)
+            .unwrap_or_else(|e| panic!("{protocol} connect: {e:?}"));
+        let invoke = |method: &str, extras: Value| {
+            let mut params = json!({"connectionId": "test", "providerId": format!("{PLUGIN_ID}.{protocol}.files")});
+            params
+                .as_object_mut()
+                .unwrap()
+                .extend(extras.as_object().unwrap().clone());
+            let response = p
+                .invoke(method, params, None)
+                .unwrap_or_else(|e| panic!("{protocol} {method}: {e:?}"));
+            if method.starts_with("workbench/") {
+                assert_eq!(response["ok"], true, "{protocol} {method}: {response}");
+                response["value"].clone()
+            } else {
+                response
+            }
+        };
+        let folder = format!("{protocol}:/dbx-workbench-{}", uuid::Uuid::new_v4());
+        let file = format!("{folder}/original.txt");
+        invoke("workbench/createDirectory", json!({"uri": folder}));
+        let task = invoke(
+            "filesystem/transfer/startUpload",
+            json!({"uri": file, "localPath": source}),
+        );
+        let wait = |id: &Value| {
+            let start = std::time::Instant::now();
+            loop {
+                let state = invoke("workbench/transfer/status", json!({"transferId": id}));
+                if matches!(
+                    state["state"].as_str(),
+                    Some("completed" | "failed" | "cancelled")
+                ) {
+                    assert_eq!(state["state"], "completed", "{protocol}: {state}");
+                    break;
+                }
+                assert!(start.elapsed() < Duration::from_secs(90));
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        };
+        wait(&task["transferId"]);
+        let listing = invoke("workbench/list", json!({"uri": folder, "limit": 200}));
+        assert!(listing["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["name"] == "original.txt"));
+        let preview = invoke("workbench/preview", json!({"uri": file}));
+        let token = &preview["token"];
+        assert_eq!(preview["kind"], "text");
+        let changed = "edited 中文\n";
+        invoke(
+            "workbench/stageText",
+            json!({"token": token, "offset": 0, "dataBase64": STANDARD.encode(changed)}),
+        );
+        invoke(
+            "workbench/saveText",
+            json!({"token": token, "size": changed.len(), "digest": format!("{:x}", Sha256::digest(changed))}),
+        );
+        invoke("workbench/releasePreview", json!({"token": token}));
+        let renamed = format!("{folder}/renamed.txt");
+        invoke(
+            "workbench/rename",
+            json!({"sourceUri": file, "targetUri": renamed}),
+        );
+        let download = local.path().join(format!("{protocol}.txt"));
+        let task = invoke(
+            "filesystem/transfer/startDownload",
+            json!({"uri": renamed, "localPath": download}),
+        );
+        wait(&task["transferId"]);
+        assert_eq!(std::fs::read(&download).unwrap(), changed.as_bytes());
+        let image = format!("{folder}/preview.png");
+        invoke(
+            "filesystem/write",
+            json!({"uri": image, "dataBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aE1sAAAAASUVORK5CYII="}),
+        );
+        let preview = invoke("workbench/preview", json!({"uri": image}));
+        assert_eq!(preview["kind"], "image");
+        invoke(
+            "workbench/releasePreview",
+            json!({"token": preview["token"]}),
+        );
+        invoke("workbench/delete", json!({"uri": image}));
+        invoke("workbench/delete", json!({"uri": renamed}));
+        invoke("workbench/delete", json!({"uri": folder}));
+        p.invoke("connection/disconnect", c, None).unwrap();
+        eprintln!("PASS {protocol}: upload/list/text edit/rename/download/image/delete/cleanup");
+    }
+    p.shutdown();
+}
+
+fn wb(p: &Plugin, method: &str, extras: Value) -> Value {
+    call(p, &format!("workbench/{method}"), extras).unwrap()
+}
+
+#[test]
+fn workbench_preview_chunks_and_conflict_checked_text_save() {
+    use sha2::{Digest, Sha256};
+    let (p, s) = memory(false);
+    p.runtime
+        .block_on(s.operator.write("edit.txt", "original"))
+        .unwrap();
+    let preview = wb(&p, "preview", json!({"uri": "ftp:/edit.txt"}));
+    assert_eq!(preview["ok"], true);
+    let token = &preview["value"]["token"];
+    assert_eq!(
+        wb(&p, "previewChunk", json!({"token": token, "offset": 0}))["value"]["dataBase64"],
+        STANDARD.encode("original")
+    );
+    let draft = "中文 updated";
+    assert_eq!(
+        wb(
+            &p,
+            "stageText",
+            json!({"token": token, "offset": 0, "dataBase64": STANDARD.encode(draft)})
+        )["ok"],
+        true
+    );
+    let save = json!({"token": token, "size": draft.len(), "digest": format!("{:x}", Sha256::digest(draft))});
+    p.runtime
+        .block_on(s.operator.write("edit.txt", "concurrent change"))
+        .unwrap();
+    assert_eq!(
+        wb(&p, "saveText", save.clone())["error"]["details"]["code"],
+        "conflict"
+    );
+    assert_eq!(
+        p.runtime
+            .block_on(s.operator.read("edit.txt"))
+            .unwrap()
+            .to_vec(),
+        b"concurrent change"
+    );
+    let mut force = save;
+    force["force"] = json!(true);
+    assert_eq!(wb(&p, "saveText", force)["ok"], true);
+    assert_eq!(
+        p.runtime
+            .block_on(s.operator.read("edit.txt"))
+            .unwrap()
+            .to_vec(),
+        draft.as_bytes()
+    );
+    wb(&p, "releasePreview", json!({"token": token}));
+    assert_eq!(
+        wb(&p, "previewChunk", json!({"token": token, "offset": 0}))["error"]["details"]["code"],
+        "expired"
+    );
+}
+
+#[test]
+fn workbench_rejects_binary_oversize_cross_connection_and_incomplete_drafts() {
+    let (p, s) = memory(false);
+    p.runtime.block_on(async {
+        s.operator.write("binary", vec![0, 1, 2]).await.unwrap();
+        s.operator
+            .write("large", vec![b'x'; 2 * 1024 * 1024 + 1])
+            .await
+            .unwrap();
+        s.operator.write("text", "hello").await.unwrap();
+    });
+    assert_eq!(
+        wb(&p, "preview", json!({"uri": "ftp:/binary"}))["error"]["details"]["code"],
+        "unsupported"
+    );
+    assert_eq!(
+        wb(&p, "preview", json!({"uri": "ftp:/large"}))["error"]["details"]["code"],
+        "too_large"
+    );
+    let token = wb(&p, "preview", json!({"uri": "ftp:/text"}))["value"]["token"].clone();
+    assert_eq!(
+        wb(
+            &p,
+            "saveText",
+            json!({"token": token, "size": 1, "digest": "wrong"})
+        )["ok"],
+        false
+    );
+    assert_eq!(
+        wb(
+            &p,
+            "stageText",
+            json!({"token": token, "offset": 4, "dataBase64": "YQ=="})
+        )["ok"],
+        false
+    );
+    assert_eq!(
+        wb(&p, "previewChunk", json!({"token": token, "offset": 99}))["ok"],
+        false
+    );
+    assert_eq!(
+        wb(&p, "preview", json!({"uri": "ftp:/../secret"}))["ok"],
+        false
+    );
+    let other = Arc::new(Session::new(
+        "other".into(),
+        "ftp".into(),
+        s.operator.clone(),
+        false,
+    ));
+    p.sessions.lock().unwrap().insert("other".into(), other);
+    assert_eq!(
+        wb(
+            &p,
+            "previewChunk",
+            json!({"connectionId": "other", "token": token, "offset": 0})
+        )["error"]["details"]["code"],
+        "expired"
+    );
+    assert_eq!(
+        wb(
+            &p,
+            "startTransfer",
+            json!({"token": "invented", "localPath": "/tmp/forged", "uri": "ftp:/text"})
+        )["ok"],
+        false
+    );
+}
+
+#[test]
+fn workbench_images_are_signature_checked_chunked_and_not_editable() {
+    let (p, s) = memory(false);
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.resize(1024 * 1024, 1);
+    p.runtime
+        .block_on(s.operator.write("image", bytes.clone()))
+        .unwrap();
+    let preview = wb(&p, "preview", json!({"uri": "ftp:/image"}));
+    assert_eq!(preview["value"]["kind"], "image");
+    let token = &preview["value"]["token"];
+    let chunk = wb(&p, "previewChunk", json!({"token": token, "offset": 0}));
+    assert_eq!(
+        STANDARD
+            .decode(chunk["value"]["dataBase64"].as_str().unwrap())
+            .unwrap()
+            .len(),
+        512 * 1024
+    );
+    assert_eq!(
+        wb(
+            &p,
+            "stageText",
+            json!({"token": token, "offset": 0, "dataBase64": ""})
+        )["ok"],
+        false
+    );
+    let (read_only, ro) = memory(true);
+    read_only
+        .runtime
+        .block_on(ro.operator.write("text", "hello"))
+        .unwrap();
+    let token = wb(&read_only, "preview", json!({"uri": "ftp:/text"}))["value"]["token"].clone();
+    assert_eq!(
+        wb(
+            &read_only,
+            "stageText",
+            json!({"token": token, "offset": 0, "dataBase64": ""})
+        )["ok"],
+        false
+    );
+}
 fn call(p: &Plugin, method: &str, extras: Value) -> Result<Value> {
     let mut value = params();
     value

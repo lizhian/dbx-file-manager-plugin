@@ -11,8 +11,7 @@ Local destination: docs/tests
 
 The manifest schema is derived from DBX host source commit
 c26ff3f6d4bd643be8dedd659c3236af4a5bd556, plugins/manifest.schema.json,
-with the coordinated Host API 1.1 filesystem capability enum extension
-from the host working tree (2026-09-06; not a committed release).
+without project-specific Host API extensions.
 The source file-manager commit contains LICENSE but no root NOTICE.
 This NOTICE records provenance; it is not an upstream NOTICE reproduction.
 

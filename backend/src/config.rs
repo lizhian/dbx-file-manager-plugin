@@ -61,6 +61,37 @@ impl ConnectionRequest {
         .into();
         let mut request: Self = serde_json::from_value(value)
             .map_err(|_| error("configuration", "Invalid connection request"))?;
+        // Host c26ff3f clears external_config on form submit. Secret bindings survive
+        // that path; keep accepting legacy external_config for existing connections.
+        let keys = [
+            "root",
+            "authentication",
+            "endpoint",
+            "region",
+            "bucket",
+            "path_style",
+            "use_delegation_token",
+            "simple_user",
+            "name_node_uri",
+            "hadoop_config_directory",
+        ];
+        for key in keys {
+            if let Some(value) = request.connection.connection_secrets.get(key) {
+                let value = if matches!(key, "path_style" | "use_delegation_token") {
+                    match value.as_str() {
+                        "true" => Value::Bool(true),
+                        "false" => Value::Bool(false),
+                        _ => return Err(error("configuration", "Invalid boolean configuration")),
+                    }
+                } else {
+                    Value::String(value.clone())
+                };
+                if !request.connection.external_config.is_object() {
+                    request.connection.external_config = serde_json::json!({});
+                }
+                request.connection.external_config[key] = value;
+            }
+        }
         request.fingerprint = fingerprint;
         request.protocol()?;
         request.query_timeout()?;
