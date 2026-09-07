@@ -8,7 +8,7 @@ try {
   const project = fileURLToPath(new URL('../', import.meta.url));
   let binary = process.env.DBX_PLUGIN_CLI_BINARY;
   if (!binary) {
-    const npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim();
+    const npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', shell: process.platform === 'win32' }).trim();
     const require = createRequire(join(npmRoot, '@dbx-app/plugin-cli/package.json'));
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
     const packageJson = require.resolve(`@dbx-app/plugin-cli-${platform}/package.json`);

@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.lizhian.file-manager",
   "name": "OpenDAL File Manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "lizhian",
   "description": "Six remote filesystem providers for the DBX host-owned file manager. Migration in progress.",
   "icon": "assets/plugin.svg",

@@ -14,7 +14,7 @@ test('requires manifest, compiled backend and root lock entry versions to agree'
   const cargoText = readFileSync(new URL('../backend/Cargo.toml', import.meta.url), 'utf8');
   const lockText = readFileSync(new URL('../backend/Cargo.lock', import.meta.url), 'utf8');
   validateBackendVersions(manifest, cargoText, lockText);
-  const next = { ...manifest, version: '0.1.1' };
+  const next = { ...manifest, version: '99.0.0' };
   const cargo = parse(cargoText);
   cargo.package.version = next.version;
   assert.throws(() => validateBackendVersions(next, cargoText, lockText), /Backend and manifest/);

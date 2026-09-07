@@ -52,7 +52,7 @@ test('GitHub workflow validates only, without release permissions or signing', (
   const workflow = parse(readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8'));
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.ok(!('release' in workflow.on));
-  assert.deepEqual(readdirSync(new URL('../.github/workflows/', import.meta.url)), ['validate.yml']);
+  assert.deepEqual(readdirSync(new URL('../.github/workflows/', import.meta.url)).sort(), ['release.yml', 'validate.yml']);
   for (const job of Object.values(workflow.jobs)) {
     for (const step of job.steps) assert.doesNotMatch(step.run ?? '', /publish|release create|sign|compose.*\b(up|down|restart)\b/);
   }

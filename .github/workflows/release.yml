@@ -1,0 +1,111 @@
+name: Release DBX plugin
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
+      - run: node scripts/release-artifacts.mjs check-tag
+      - run: node --test tests/*.test.mjs
+
+  build:
+    needs: validate
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, target: linux-x64}
+          - {runner: ubuntu-24.04-arm, target: linux-arm64}
+          - {runner: windows-2022, target: windows-x64}
+          - {runner: macos-15-intel, target: darwin-x64}
+          - {runner: macos-15, target: darwin-arm64}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '4'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ilammy/setup-nasm@v1
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev unzip
+      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
+      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --ignore-scripts --no-audit --no-fund
+      - name: Build using the official native CLI
+        env:
+          DBX_PLUGIN_TARGET: ${{ matrix.target }}
+        run: node scripts/package.mjs --target "$DBX_PLUGIN_TARGET"
+      - name: Verify target artifact
+        env:
+          DBX_PLUGIN_TARGET: ${{ matrix.target }}
+        run: node scripts/release-artifacts.mjs check-target
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbx-plugin-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.dbxp
+            dist/*.artifact.json
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix tests --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dbx-plugin-*
+          path: release-assets
+          merge-multiple: true
+      - name: Validate all five targets and merge metadata
+        run: node scripts/release-artifacts.mjs merge
+      - name: Publish complete unsigned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes --notes "Unsigned development packages. Requires the adapted DBX Host API 1.1 host. Windows SFTP is unsupported. Multi-platform builds do not imply full runtime acceptance."
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/*.dbxp release-assets/*.artifact.json release-assets/release-candidates.json --clobber
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+          else
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi

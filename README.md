@@ -1,8 +1,8 @@
 # OpenDAL File Manager
 
-Independent DBX plugin `io.github.lizhian.file-manager`, publisher `lizhian`, version `0.1.0`.
+Independent DBX plugin `io.github.lizhian.file-manager`, publisher `lizhian`, version `0.1.1`.
 
-**Migration in progress; not a release.** Six connection providers share the DBX
+**Development release; migration acceptance remains incomplete.** Six connection providers share the DBX
 host-owned file manager. No custom workbench or UI entrypoint is contributed.
 The unused generated UI template has been removed and is not packaged.
 
@@ -14,9 +14,20 @@ to the local acceptance archive unless explicitly included. See
 [evidence handling](docs/evidence/README.md). Publishing source is not a plugin
 release or a claim that all migration gates have passed.
 
-Current validation scope is **macOS Apple Silicon (ARM64) only**, per the user's
-2026-09-07 decision. Linux/Windows artifacts are historical and are not pending
-completion gates. Six-protocol and native Mac workflow requirements remain.
+Functional acceptance focuses on **macOS Apple Silicon (ARM64)**. Tag releases
+now build all five official platform/architecture targets, as separately requested.
+Cross-platform builds are not a claim of full functional acceptance.
+
+## Download and release
+
+Download `.dbxp` files from [GitHub Releases](https://github.com/lizhian/dbx-file-manager-plugin/releases).
+Pushing a matching `vX.Y.Z` tag builds macOS x64/ARM64, Linux x64/ARM64 and Windows
+x64, then publishes all packages, per-target `.artifact.json` files and
+`release-candidates.json`. Naming follows the official DBX CLI:
+`io.github.lizhian.file-manager-<version>-<target>.dbxp`.
+Packages are unsigned and require the adapted Host API 1.1 host plus explicit
+local-development installation. Windows SFTP remains unsupported.
+See [release workflow](docs/RELEASING.md) for versioning and retry instructions.
 
 ## Development baseline
 
@@ -100,8 +111,8 @@ backend and stage the manifest, native binary,
 `assets/`, `LICENSE`, and `NOTICE`. It excludes UI, tests, runtime files, and
 documentation. Packaging/install/upgrade/rollback need separate acceptance evidence;
 a valid manifest does not prove an installable or functional package.
-CI is validation-only, with read-only permissions. No publishing/signing workflow
-is enabled. Source publication does not create a GitHub Release or publish signed packages.
+Regular CI remains read-only. Tag CI grants Release write access only to the
+publish job after the complete build matrix passes; no signing keys are used.
 
 After building a candidate, verify its exact contents and checksums:
 
@@ -117,7 +128,7 @@ which otherwise conflicts with the locked Git SDK dependency. It removes only
 `DBX_PLUGIN_SDK_ROOT` from the child environment; it never edits the SDK pin or lock.
 The underlying native command remains `dbx-plugin package .` with locked release build.
 
-The latest tested Mac ARM candidate is
+The historical locally tested Mac ARM 0.1.0 candidate is
 `dist/upload-fairness-gates/io.github.lizhian.file-manager-0.1.0-darwin-arm64.dbxp`
 (7,315,673 bytes; SHA-256
 `1e6d2f076949c8288359d18efd3343293c9a7e921ed75da86a6e92e7a6409f26`).
@@ -127,13 +138,13 @@ and other directories remain historical checkpoints, not current releases.
 Full-six 16/256 MiB measurements, concurrent upload/download results,
 package identities and Hadoop environment limits are in
 [transfer acceptance](docs/TRANSFER-ACCEPTANCE.md) and `docs/VERIFICATION.md`.
-The matching-code test-only 0.1.1 package is under
+The matching-code local 0.1.1 test package is under
 `dist/upload-fairness-lifecycle-gates/` (SHA-256
 `a0afe15daab57f5114dddfee1d11286ccad97749def90223388b3889b592c8db`).
 It was built from `dist/upload-fairness-lifecycle-source/`, with only root plugin
-versions changed. Verify that package using the verifier in that source copy;
-the main 0.1.0 manifest correctly rejects its version mismatch. This does not
-change the repository's version, authorize installation or constitute a release.
+versions changed at that checkpoint. The main source is now 0.1.1 for the tag
+release. Local candidates are not automatically uploaded; Release assets are
+rebuilt by GitHub Actions at the tag commit.
 The matching pair passed eight real host API active-transfer upgrade/rollback
 cases; GUI installation/upload remain separate. See
 [lifecycle acceptance](docs/LIFECYCLE-ACCEPTANCE.md).
@@ -161,7 +172,8 @@ their full product, native-runtime and release gates evidenced.
 
 Historical Linux/Windows candidates and their limited evidence are retained in
 [platform acceptance](docs/PLATFORM-ACCEPTANCE.md). They predate the latest upload
-scheduling fix and will not be rebuilt or validated as part of the current Mac-only scope.
+scheduling fix. New tag builds cover all five targets; full runtime acceptance
+still focuses on Mac ARM and must not be inferred from a successful build.
 
 Apache-2.0; source attribution and commit provenance are retained in
 [LICENSE](LICENSE) and [NOTICE](NOTICE).
