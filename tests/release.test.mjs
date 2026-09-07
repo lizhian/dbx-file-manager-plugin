@@ -21,7 +21,8 @@ test('official artifact naming binds identity, version and target', () => {
 });
 test('release publishes only after the full official five-target matrix succeeds', () => {
   const workflow = parse(readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
-  assert.deepEqual(workflow.on, { push: { tags: ['v*'] } });
+  assert.deepEqual(workflow.on.push, { tags: ['v*'] });
+  assert.equal(workflow.on.workflow_dispatch.inputs.tag.required, true);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.equal(workflow.jobs.build.needs, 'validate');
   assert.equal(workflow.jobs.build.strategy['fail-fast'], false);
@@ -32,4 +33,10 @@ test('release publishes only after the full official five-target matrix succeeds
   assert.equal(publish.env.GH_REPO, '${{ github.repository }}');
   assert.match(publish.run, /--verify-tag --draft/);
   assert.match(publish.run, /release-candidates\.json/);
+  const linker = workflow.jobs.build.steps.find(step => step.name?.startsWith('Pin the MSVC'));
+  assert.equal(linker.shell, 'pwsh');
+  assert.match(linker.run, /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER/);
+  for (const job of Object.values(workflow.jobs)) {
+    assert.match(job.steps.find(step => step.uses === 'actions/checkout@v4').with.ref, /refs\/tags/);
+  }
 });

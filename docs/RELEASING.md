@@ -52,6 +52,18 @@ an already published tag to silently change source; use a new patch version for
 source changes. The workflow uses no signing secret and does not publish to the
 official DBX plugin store.
 
+For a workflow-only fix, keep the original tag immutable and dispatch the updated
+workflow from `main` with input `tag=v0.1.1`. Every job explicitly checks out that
+existing tag, and version checks still apply to the tagged source. For example:
+
+```sh
+gh workflow run release.yml --ref main -f tag=v0.1.1
+```
+
+Windows pins the absolute MSVC linker path because Git Bash also ships a
+`link.exe` that is not a C/C++ linker. The initial v0.1.1 run exposed this PATH
+collision; a workflow-only retry does not change the tagged plugin source.
+
 ## Support boundary
 
 These are unsigned development packages, not evidence of completed migration
