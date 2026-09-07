@@ -36,6 +36,9 @@ test('release publishes only after the full official five-target matrix succeeds
   const linker = workflow.jobs.build.steps.find(step => step.name?.startsWith('Pin the MSVC'));
   assert.equal(linker.shell, 'pwsh');
   assert.match(linker.run, /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER/);
+  assert.equal(workflow.jobs.build.steps[0].run, 'git config --global core.autocrlf false');
+  assert.equal(workflow.jobs.build.steps[0].if, "runner.os == 'Windows'");
+  assert.match(readFileSync(new URL('../.gitattributes', import.meta.url), 'utf8'), /text=auto eol=lf/);
   for (const job of Object.values(workflow.jobs)) {
     assert.match(job.steps.find(step => step.uses === 'actions/checkout@v4').with.ref, /refs\/tags/);
   }

@@ -63,6 +63,10 @@ gh workflow run release.yml --ref main -f tag=v0.1.1
 Windows pins the absolute MSVC linker path because Git Bash also ships a
 `link.exe` that is not a C/C++ linker. The initial v0.1.1 run exposed this PATH
 collision; a workflow-only retry does not change the tagged plugin source.
+Windows also disables checkout CRLF conversion before fetching the source, so
+LICENSE and NOTICE remain byte-identical across targets. A subsequent aggregation
+check caught CRLF conversion despite a successful Windows-local verification;
+the fix preserves original bytes instead of relaxing the package verifier.
 
 ## Support boundary
 
