@@ -145,3 +145,26 @@ it('protects drafts before moving and keeps copy available independently of rena
   expect(m.can('copy')).toBe(false);
   expect(m.canEdit.value).toBe(false);
 });
+
+it('keeps the current preview during loading and on failure, then releases it after replacement', async () => {
+  let finish!: (value: any) => void;
+  const { manager: m, invoke } = await setup('a', undefined, (method, params) => {
+    if (method.endsWith('/preview') && params.uri === 'opendal:/next.txt') return new Promise(resolve => { finish = resolve; });
+    if (method.endsWith('/preview') && params.uri === 'opendal:/failed.txt') return { ok: false, error: { message: 'failed', details: { code: 'backend' } } };
+  });
+  await m.open(m.entries.value[0]);
+  const previous = m.preview.value;
+  await m.open({ name: 'failed.txt', uri: 'opendal:/failed.txt', kind: 'file' });
+  expect(m.preview.value).toBe(previous);
+  expect(m.content.value).toBe('original');
+  const pending = m.open({ name: 'next.txt', uri: 'opendal:/next.txt', kind: 'file' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(m.busy.value).toBe(true);
+  expect(m.preview.value).toBe(previous);
+  expect(invoke.mock.calls.some(([method]) => method.endsWith('/releasePreview'))).toBe(false);
+  finish({ ok: true, value: { token: 'next', kind: 'text', size: 0, digest: sha256('') } });
+  await pending;
+  expect(m.preview.value?.token).toBe('next');
+  expect(m.content.value).toBe('');
+  expect(invoke.mock.calls.find(([method]) => method.endsWith('/releasePreview'))?.[1].token).toBe('snapshot');
+});

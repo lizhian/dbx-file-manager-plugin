@@ -30,6 +30,106 @@
   "contributions": [
     {
       "type": "connection-provider",
+      "id": "io.github.lizhian.file-manager.s3",
+      "label": "S3",
+      "icon": "assets/plugin.svg",
+      "database_type": "s3",
+      "description": "S3 or an S3-compatible endpoint. Credentials are stored by the host Secret Store.",
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
+      "fields": [
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "S3"
+        },
+        {
+          "key": "root",
+          "label": "Remote root",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "/"
+        },
+        {
+          "key": "endpoint",
+          "label": "Endpoint",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "description": "Explicit HTTP(S) S3 endpoint. Do not embed credentials.",
+          "default": ""
+        },
+        {
+          "key": "region",
+          "label": "Region",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": "us-east-1"
+        },
+        {
+          "key": "bucket",
+          "label": "Bucket",
+          "type": "text",
+          "binding": "secret",
+          "required": true,
+          "default": ""
+        },
+        {
+          "key": "path_style",
+          "label": "Path-style addressing",
+          "type": "select",
+          "binding": "secret",
+          "required": false,
+          "default": "true",
+          "options": [
+            {
+              "label": "是",
+              "value": "true"
+            },
+            {
+              "label": "否",
+              "value": "false"
+            }
+          ],
+          "description": "Use path-style addressing for IP endpoints and most S3-compatible services. Disable only when bucket subdomains are configured."
+        },
+        {
+          "key": "access_key",
+          "label": "Access key",
+          "type": "password",
+          "binding": "secret",
+          "required": true,
+          "default": ""
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret key",
+          "type": "password",
+          "binding": "secret",
+          "required": true,
+          "default": ""
+        },
+        {
+          "key": "session_token",
+          "label": "Session token",
+          "type": "password",
+          "binding": "secret",
+          "required": false,
+          "default": ""
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
+    },
+    {
+      "type": "connection-provider",
       "id": "io.github.lizhian.file-manager.ftp",
       "label": "FTP",
       "icon": "assets/plugin.svg",
@@ -54,7 +154,8 @@
           "label": "Host",
           "type": "text",
           "binding": "host",
-          "required": true
+          "required": true,
+          "default": ""
         },
         {
           "key": "port",
@@ -69,14 +170,16 @@
           "label": "Username",
           "type": "text",
           "binding": "username",
-          "required": true
+          "required": true,
+          "default": ""
         },
         {
           "key": "password",
           "label": "Password",
           "type": "password",
           "binding": "secret",
-          "required": false
+          "required": false,
+          "default": ""
         },
         {
           "key": "root",
@@ -115,7 +218,8 @@
           "label": "Host",
           "type": "text",
           "binding": "host",
-          "required": true
+          "required": true,
+          "default": ""
         },
         {
           "key": "port",
@@ -131,7 +235,8 @@
           "type": "text",
           "binding": "username",
           "required": false,
-          "description": "May be supplied by SSH config; validated by the backend for the selected authentication mode."
+          "description": "May be supplied by SSH config; validated by the backend for the selected authentication mode.",
+          "default": ""
         },
         {
           "key": "root",
@@ -169,101 +274,8 @@
           "type": "password",
           "binding": "secret",
           "required": false,
-          "description": "Absolute local OpenSSH private-key file path on the sidecar machine, not key content. Required for private_key authentication only."
-        }
-      ],
-      "workbench": "io.github.lizhian.file-manager.main"
-    },
-    {
-      "type": "connection-provider",
-      "id": "io.github.lizhian.file-manager.s3",
-      "label": "S3",
-      "icon": "assets/plugin.svg",
-      "database_type": "s3",
-      "description": "S3 or an S3-compatible endpoint. Credentials are stored by the host Secret Store.",
-      "capabilities": [
-        "test",
-        "connect",
-        "disconnect"
-      ],
-      "fields": [
-        {
-          "key": "display_name",
-          "label": "Connection name",
-          "type": "text",
-          "binding": "name",
-          "required": true,
-          "default": "S3"
-        },
-        {
-          "key": "root",
-          "label": "Remote root",
-          "type": "text",
-          "binding": "secret",
-          "required": true,
-          "default": "/"
-        },
-        {
-          "key": "endpoint",
-          "label": "Endpoint",
-          "type": "text",
-          "binding": "secret",
-          "required": true,
-          "description": "Explicit HTTP(S) S3 endpoint. Do not embed credentials."
-        },
-        {
-          "key": "region",
-          "label": "Region",
-          "type": "text",
-          "binding": "secret",
-          "required": true,
-          "default": "us-east-1"
-        },
-        {
-          "key": "bucket",
-          "label": "Bucket",
-          "type": "text",
-          "binding": "secret",
-          "required": true
-        },
-        {
-          "key": "path_style",
-          "label": "Path-style addressing",
-          "type": "select",
-          "binding": "secret",
-          "required": false,
-          "default": "false",
-          "options": [
-            {
-              "label": "是",
-              "value": "true"
-            },
-            {
-              "label": "否",
-              "value": "false"
-            }
-          ]
-        },
-        {
-          "key": "access_key",
-          "label": "Access key",
-          "type": "password",
-          "binding": "secret",
-          "required": true
-        },
-        {
-          "key": "secret_key",
-          "label": "Secret key",
-          "type": "password",
-          "binding": "secret",
-          "required": true
-        },
-        {
-          "key": "session_token",
-          "label": "Session token",
-          "type": "password",
-          "binding": "secret",
-          "required": false
+          "description": "Absolute local OpenSSH private-key file path on the sidecar machine, not key content. Required for private_key authentication only.",
+          "default": ""
         }
       ],
       "workbench": "io.github.lizhian.file-manager.main"
@@ -303,7 +315,8 @@
           "type": "text",
           "binding": "secret",
           "required": true,
-          "description": "HTTP(S) URL without embedded credentials."
+          "description": "HTTP(S) URL without embedded credentials.",
+          "default": ""
         },
         {
           "key": "authentication",
@@ -329,7 +342,8 @@
           "type": "text",
           "binding": "username",
           "required": false,
-          "description": "Basic authentication only; validated by the backend."
+          "description": "Basic authentication only; validated by the backend.",
+          "default": ""
         },
         {
           "key": "password",
@@ -337,7 +351,8 @@
           "type": "password",
           "binding": "secret",
           "required": false,
-          "description": "Basic authentication only; validated by the backend."
+          "description": "Basic authentication only; validated by the backend.",
+          "default": ""
         },
         {
           "key": "bearer_token",
@@ -345,7 +360,8 @@
           "type": "password",
           "binding": "secret",
           "required": false,
-          "description": "Required by the backend for Bearer authentication only."
+          "description": "Required by the backend for Bearer authentication only.",
+          "default": ""
         }
       ],
       "workbench": "io.github.lizhian.file-manager.main"
@@ -385,7 +401,8 @@
           "type": "text",
           "binding": "secret",
           "required": true,
-          "description": "HTTP(S) NameNode URL without embedded credentials or tokens."
+          "description": "HTTP(S) NameNode URL without embedded credentials or tokens.",
+          "default": ""
         },
         {
           "key": "use_delegation_token",
@@ -411,7 +428,8 @@
           "type": "text",
           "binding": "secret",
           "required": false,
-          "description": "Used when delegation tokens are disabled; validated by the backend."
+          "description": "Used when delegation tokens are disabled; validated by the backend.",
+          "default": ""
         },
         {
           "key": "delegation_token",
@@ -419,7 +437,8 @@
           "type": "password",
           "binding": "secret",
           "required": false,
-          "description": "Required by the backend when use_delegation_token is enabled."
+          "description": "Required by the backend when use_delegation_token is enabled.",
+          "default": ""
         }
       ],
       "workbench": "io.github.lizhian.file-manager.main"
@@ -459,7 +478,8 @@
           "type": "text",
           "binding": "secret",
           "required": true,
-          "description": "An hdfs:// endpoint, distinct from the host navigation URI hdfs-native:/."
+          "description": "An hdfs:// endpoint, distinct from the host navigation URI hdfs-native:/.",
+          "default": ""
         },
         {
           "key": "hadoop_config_directory",
@@ -467,7 +487,8 @@
           "type": "text",
           "binding": "secret",
           "required": true,
-          "description": "Accessible absolute local directory containing core-site.xml or hdfs-site.xml, read by the sidecar. Never paste credentials here."
+          "description": "Accessible absolute local directory containing core-site.xml or hdfs-site.xml, read by the sidecar. Never paste credentials here.",
+          "default": ""
         }
       ],
       "workbench": "io.github.lizhian.file-manager.main"
@@ -504,6 +525,7 @@
           "type": "select",
           "binding": "secret",
           "required": true,
+          "default": "s3",
           "options": [
             {
               "value": "aliyun-drive",
@@ -777,6 +799,7 @@
           "type": "textarea",
           "binding": "secret",
           "required": false,
+          "default": "",
           "placeholder": "key1=value1\nkey2=value2",
           "description": "每行 key=value，按第一个 = 分隔，值中的空格保留。配置参考：https://opendal.apache.org/services/；不要添加引号或变量表达式。当前宿主及模拟服务明文存储，仅使用测试凭据。"
         }
@@ -868,7 +891,8 @@
               "label": "存储桶"
             },
             "path_style": {
-              "label": "路径式寻址"
+              "label": "路径式寻址",
+              "description": "IP 地址和多数 S3 兼容服务请选“是”；仅在已配置存储桶子域名时选“否”。"
             },
             "access_key": {
               "label": "访问密钥"

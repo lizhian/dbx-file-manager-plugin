@@ -77,7 +77,7 @@ onBeforeUnmount(() => { disposed = true; });
 <template>
   <div>
     <form class="mb-2 flex gap-2" @submit.prevent="selectPath">
-      <input v-model="input" class="input input-sm min-w-0 flex-1" aria-label="目标目录路径" />
+      <input v-model="input" class="input input-sm min-w-0 flex-1 focus:outline-none focus:ring-0" aria-label="目标目录路径" />
       <button class="btn btn-sm" type="submit">选择路径</button>
     </form>
     <p v-if="inputError" class="text-sm text-error" role="alert">{{ inputError }}</p>

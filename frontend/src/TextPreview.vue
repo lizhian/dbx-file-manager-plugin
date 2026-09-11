@@ -11,18 +11,25 @@ import { css } from '@codemirror/lang-css';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
-const props = defineProps<{ content: string; name: string; editable: boolean; disabled?: boolean }>();
+const props = defineProps<{ content: string; name: string; documentId: string; editable: boolean; disabled?: boolean }>();
 const emit = defineEmits<{ 'update:content': [value: string] }>();
 const host = ref<HTMLElement>(); let view: EditorView | undefined; const editableCompartment = new Compartment();
 const languages: Record<string, () => any> = { json, js: javascript, ts: javascript, jsx: javascript, tsx: javascript, html, vue: html, css, md: markdown, markdown, py: python, rs: rust };
 const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'hsl(var(--b1))', color: 'hsl(var(--bc))' },
-  '.cm-gutters': { backgroundColor: 'hsl(var(--b2))', color: 'hsl(var(--bc) / 0.55)', border: 'none', borderRight: '1px solid hsl(var(--bc) / 0.18)' },
-  '.cm-activeLineGutter': { backgroundColor: 'hsl(var(--b3))', color: 'hsl(var(--bc) / 0.8)' },
+  '&': { backgroundColor: 'var(--color-base-100)', color: 'var(--color-base-content)' },
+  '.cm-gutters': { backgroundColor: 'var(--color-base-200)', color: 'color-mix(in srgb, var(--color-base-content) 60%, transparent)', border: 'none', borderRight: '1px solid var(--color-base-300)' },
+  '.cm-activeLineGutter': { backgroundColor: 'var(--color-base-300)', color: 'var(--color-base-content)' },
 }, { dark: false });
-function create() { if (!host.value) return; const language = languages[props.name.split('.').pop()?.toLowerCase() || '']; view = new EditorView({ state: EditorState.create({ doc: props.content, extensions: [editorTheme, lineNumbers(), history(), syntaxHighlighting(defaultHighlightStyle), ...(language ? [language()] : []), keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]), editableCompartment.of(EditorView.editable.of(props.editable && !props.disabled)), EditorView.updateListener.of(update => { if (update.docChanged) emit('update:content', update.state.doc.toString()); })] }), parent: host.value }); }
-onMounted(create);
-watch(() => props.disabled, value => view?.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(props.editable && !value)) }));
+function documentState() {
+  const language = languages[props.name.split('.').pop()?.toLowerCase() || ''];
+  return EditorState.create({ doc: props.content, extensions: [editorTheme, lineNumbers(), history(), syntaxHighlighting(defaultHighlightStyle), ...(language ? [language()] : []), keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]), editableCompartment.of(EditorView.editable.of(props.editable && !props.disabled)), EditorView.updateListener.of(update => { if (update.docChanged) emit('update:content', update.state.doc.toString()); })] });
+}
+onMounted(() => { if (host.value) view = new EditorView({ state: documentState(), parent: host.value }); });
+watch(() => props.documentId, () => {
+  view?.setState(documentState());
+  if (host.value) { host.value.scrollTop = 0; host.value.scrollLeft = 0; }
+});
+watch(() => [props.editable, props.disabled], () => view?.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(props.editable && !props.disabled)) }));
 watch(() => props.content, value => { if (view && value !== view.state.doc.toString()) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } }); });
 onBeforeUnmount(() => view?.destroy());
 </script>

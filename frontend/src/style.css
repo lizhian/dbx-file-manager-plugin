@@ -24,3 +24,7 @@ button:focus-visible, tr:focus-visible { outline: 2px solid var(--color-info); o
 @media (prefers-color-scheme: dark) {
   :root { --color-base-100: var(--color-background, #18181b); --color-base-200: var(--color-muted, #27272a); --color-base-300: var(--color-border, #3f3f46); --color-base-content: var(--color-foreground, #f4f4f5); }
 }
+
+@media (min-width: 48rem) {
+  .file-preview { width: var(--preview-width, 42%); flex-shrink: 0; }
+}

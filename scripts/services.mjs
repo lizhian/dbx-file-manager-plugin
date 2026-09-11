@@ -18,14 +18,25 @@ const contribution = {
   capabilities: ['test', 'connect', 'disconnect'],
   fields: [
     { key: 'display_name', label: '连接名称', type: 'text', binding: 'name', required: true, default: 'OpenDAL' },
-    { key: 'service', label: '服务', type: 'select', binding: 'secret', required: true,
+    { key: 'service', label: '服务', type: 'select', binding: 'secret', required: true, default: 's3',
       options: catalog.services.map(s => ({ value: s.id, label: `${s.id}（${labels[s.status]}${s.reason ? `：${s.reason}` : ''}）` })) },
-    { key: 'parameters', label: '参数', type: 'textarea', binding: 'secret', required: false,
+    { key: 'parameters', label: '参数', type: 'textarea', binding: 'secret', required: false, default: '',
       placeholder: 'key1=value1\nkey2=value2', description: '每行 key=value，按第一个 = 分隔，值中的空格保留。配置参考：https://opendal.apache.org/services/；不要添加引号或变量表达式。当前宿主及模拟服务明文存储，仅使用测试凭据。' },
   ], workbench: `${id}.main`,
 };
 const index = manifest.contributions.findIndex(c => c.id === contribution.id);
 if (index < 0) manifest.contributions.push(contribution); else manifest.contributions[index] = contribution;
+const providerOrder = ['s3', 'ftp', 'sftp', 'webdav', 'webhdfs', 'hdfs-native', 'opendal'];
+const providers = manifest.contributions.filter(c => c.type === 'connection-provider')
+  .sort((a, b) => providerOrder.indexOf(a.database_type) - providerOrder.indexOf(b.database_type));
+let providerIndex = 0;
+manifest.contributions = manifest.contributions.map(c => c.type === 'connection-provider' ? providers[providerIndex++] : c);
+// Explicit empty strings survive the host's Rust manifest serialization without becoming null.
+for (const provider of manifest.contributions.filter(c => c.type === 'connection-provider')) {
+  for (const field of provider.fields) {
+    if (field.default == null && ['text', 'password', 'textarea'].includes(field.type)) field.default = '';
+  }
+}
 const cargoFile = new URL('backend/Cargo.toml', root);
 const cargo = await readFile(cargoFile, 'utf8');
 const features = ['executors-tokio', 'reqwest-rustls-tls', ...catalog.services.filter(s => s.status === 'compiled' && s.id !== 'sftp').map(s => `services-${s.id}`)];

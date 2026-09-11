@@ -159,7 +159,7 @@ export function useManager(ask: Ask) {
     await run(async () => {
       if (!await requireCapability('read', '文件预览')) return;
       if (!await discard()) return;
-      release(); selected.value = entry;
+      const previous = preview.value;
       const g = generation;
       const caller = api;
       const meta = await caller('preview', { uri: entry.uri });
@@ -181,8 +181,12 @@ export function useManager(ask: Ask) {
           preview.value = { token: meta.token, entry, kind: 'text', truncated: meta.truncated, byteLimited: meta.byteLimited, editable: meta.editable };
         } else {
           if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(meta.mime)) throw new Error('不支持此图片格式');
+          content.value = ''; original.value = '';
           preview.value = { token: meta.token, entry, kind: 'image', url: URL.createObjectURL(new Blob([bytes], { type: meta.mime })) };
         }
+        selected.value = entry;
+        if (previous?.url) URL.revokeObjectURL(previous.url);
+        if (previous && previous.token !== meta.token) void caller('releasePreview', { token: previous.token }).catch(() => {});
       } finally {
         if (preview.value?.token !== meta.token) void caller('releasePreview', { token: meta.token }).catch(() => {});
       }
