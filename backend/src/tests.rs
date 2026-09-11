@@ -2073,3 +2073,45 @@ fn operator_session_keeps_capabilities_stable_and_paths_root_relative() {
     session.cancellation().cancel();
     assert_eq!(code(session.require("read").unwrap_err()), "not_connected");
 }
+
+#[test]
+fn connection_adapters_preserve_authentication_and_explicit_s3_policy() {
+    let mut request = connection("s3");
+    request["connection"]["connection_secrets"]["path_style"] = json!("false");
+    request["connection"]["connection_secrets"]["session_token"] = json!("test-token");
+    let config = ConnectionRequest::parse(request)
+        .unwrap()
+        .normalize()
+        .unwrap();
+    assert_eq!(config.service, "s3");
+    for key in [
+        "disable_config_load",
+        "disable_ec2_metadata",
+        "enable_virtual_host_style",
+    ] {
+        assert_eq!(config.parameters[key], "true");
+    }
+    assert_eq!(config.parameters["session_token"], "test-token");
+    assert!(!config.parameters.contains_key("access_key"));
+
+    let mut request = connection("webdav");
+    request["connection"]["connection_secrets"] = json!({"authentication": "bearer", "bearer_token": "test-token", "password": "stale-password"});
+    let config = ConnectionRequest::parse(request)
+        .unwrap()
+        .normalize()
+        .unwrap();
+    assert_eq!(config.parameters["token"], "test-token");
+    assert!(!config.parameters.contains_key("username"));
+    assert!(!config.parameters.contains_key("password"));
+    assert!(config.build().is_ok());
+
+    let mut request = connection("webhdfs");
+    request["connection"]["connection_secrets"] = json!({"use_delegation_token": "true", "delegation_token": "test-token", "simple_user": "stale-user"});
+    let config = ConnectionRequest::parse(request)
+        .unwrap()
+        .normalize()
+        .unwrap();
+    assert_eq!(config.parameters["delegation"], "test-token");
+    assert!(!config.parameters.contains_key("user_name"));
+    assert!(config.build().is_ok());
+}

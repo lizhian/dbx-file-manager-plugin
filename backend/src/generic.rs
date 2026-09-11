@@ -54,30 +54,46 @@ pub fn parameters(input: &str) -> Result<HashMap<String, String>> {
     Ok(result)
 }
 
-pub fn build(id: &str, input: &str) -> Result<Operator> {
-    let service = service(id)?;
-    if service.status != "compiled" {
-        return Err(error(
-            "service_unavailable",
-            &format!("{}: {}", service.id, service.reason),
-        ));
-    }
-    let parameters = parameters(input)?;
-    if let Some(root) = parameters.get("root") {
-        if root.contains('\\')
-            || root.chars().any(char::is_control)
-            || root.split('/').any(|p| p == "." || p == "..")
-        {
-            return Err(error("configuration", "Invalid configured root"));
+/// Normalized OpenDAL configuration. Never derive Debug: values may contain credentials.
+pub struct Configuration {
+    pub service: String,
+    pub parameters: HashMap<String, String>,
+}
+
+impl Configuration {
+    pub fn build(self) -> Result<Operator> {
+        let service = service(&self.service)?;
+        if service.status != "compiled" {
+            return Err(error(
+                "service_unavailable",
+                &format!("{}: {}", service.id, service.reason),
+            ));
         }
+        if let Some(root) = self.parameters.get("root") {
+            if root.contains('\\')
+                || root.chars().any(char::is_control)
+                || root.split('/').any(|p| p == "." || p == "..")
+            {
+                return Err(error("configuration", "Invalid configured root"));
+            }
+        }
+        opendal::init_default_registry();
+        build_operator(&service.scheme, self.parameters)
     }
-    opendal::init_default_registry();
-    build_operator(&service.scheme, parameters)
+}
+
+#[cfg(test)]
+pub fn build(id: &str, input: &str) -> Result<Operator> {
+    Configuration {
+        service: id.into(),
+        parameters: parameters(input)?,
+    }
+    .build()
 }
 
 /// Construct every standard OpenDAL service from the normalized string map.
 /// Connection-specific field conversion belongs at the configuration boundary.
-pub fn build_operator(scheme: &str, parameters: HashMap<String, String>) -> Result<Operator> {
+fn build_operator(scheme: &str, parameters: HashMap<String, String>) -> Result<Operator> {
     let operator = match scheme {
         "hdfs-native" if parameters.contains_key("options") => {
             with_map::<opendal::services::HdfsNativeConfig>(&parameters, "options")?

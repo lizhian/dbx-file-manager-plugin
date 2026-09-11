@@ -90,3 +90,12 @@ Session 集中保存 Operator、不可变原始能力快照，以及只读、代
 
 连接创建同步检查远端；没有列表能力或检查返回 Unsupported 时，明确返回 `configuration_only`，不假称已验证。其他检查错误阻止发布会话。
 取消上传统一尝试 OpenDAL abort，仅 Unsupported 时尝试 close，再清理临时文件。
+
+## 连接配置汇聚（2026-09-11）
+
+`config.rs` 的 `ConnectionRequest::normalize()` 是连接入口 adapter：负责宿主字段兼容、认证选择、端点转换及 Hadoop XML 读取，输出统一的 `Configuration { service, parameters }`。
+六种专用入口不再直接调用 OpenDAL 服务 builder。通用入口将 Secret Store 中的 `key=value` 参数解析为相同结构。
+`generic.rs` 的 `Configuration::build()` 是唯一构建路径，集中校验服务可用性和根目录，初始化 OpenDAL registry，并应用嵌套配置与 WebDAV 流式适配。
+规范化配置含凭据，不实现 Debug、不写入日志；宿主 Secret Store 优先级、旧 external_config 兼容、S3 禁用环境凭据加载及认证方式互斥保持不变。
+
+验证：53 项 Rust 测试全部通过（含三个真实环境测试，覆盖六协议专用入口、通用入口和分页回归）。

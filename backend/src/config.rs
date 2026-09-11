@@ -1,5 +1,6 @@
-use crate::error::{error, flag, remote, text, Result};
-use opendal::{services, Operator};
+use crate::error::{error, flag, text, Result};
+use crate::generic::{parameters, Configuration};
+use opendal::Operator;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -148,6 +149,10 @@ impl ConnectionRequest {
     }
 
     pub fn build(&self) -> Result<Operator> {
+        self.normalize()?.build()
+    }
+
+    pub fn normalize(&self) -> Result<Configuration> {
         let protocol = self.protocol()?;
         let c = &self.connection;
         let config = &c.external_config;
@@ -157,14 +162,17 @@ impl ConnectionRequest {
                 .get("service")
                 .ok_or_else(|| error("configuration", "Missing secret-bound service"))?;
             // Generic options are never read from ordinary configuration or exposed in errors.
-            return crate::generic::build(
-                service,
-                c.connection_secrets
-                    .get("parameters")
-                    .map(String::as_str)
-                    .unwrap_or(""),
-            );
+            return Ok(Configuration {
+                service: service.clone(),
+                parameters: parameters(
+                    c.connection_secrets
+                        .get("parameters")
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                )?,
+            });
         }
+
         if !config.is_object() && !config.is_null() {
             return Err(error("configuration", "external_config must be an object"));
         }
@@ -199,12 +207,6 @@ impl ConnectionRequest {
             }
         };
         let root = optional("root", "/")?;
-        if root.contains('\\')
-            || root.chars().any(char::is_control)
-            || root.split('/').any(|p| p == ".." || p == ".")
-        {
-            return Err(error("configuration", "Invalid configured root"));
-        }
         let overridden = self
             .runtime
             .as_ref()
@@ -231,6 +233,10 @@ impl ConnectionRequest {
                 "This protocol does not support SSH or proxy transport layers",
             ));
         }
+        let mut values = HashMap::from([("root".to_owned(), root)]);
+        let mut set = |key: &str, value: &str| {
+            values.insert(key.into(), value.into());
+        };
         match protocol {
             "ftp" | "sftp" => {
                 let host = self
@@ -242,89 +248,73 @@ impl ConnectionRequest {
                 let fallback = optional("endpoint", "")?;
                 let host = if host.is_empty() { &fallback } else { host };
                 let scheme = if protocol == "ftp" { "ftp" } else { "ssh" };
-                let endpoint = tcp_endpoint(
-                    host,
-                    scheme,
-                    if port == 0 {
-                        if protocol == "ftp" {
-                            21
-                        } else {
-                            22
-                        }
+                let port = if port == 0 {
+                    if protocol == "ftp" {
+                        21
                     } else {
-                        port
-                    },
-                )?;
+                        22
+                    }
+                } else {
+                    port
+                };
+                set("endpoint", &tcp_endpoint(host, scheme, port)?);
+                set("user", &c.username);
                 if protocol == "ftp" {
-                    return Operator::new(
-                        services::Ftp::default()
-                            .endpoint(&endpoint)
-                            .root(&root)
-                            .user(&c.username)
-                            .password(secret("password")),
-                    )
-                    .map(|b| b.finish())
-                    .map_err(remote);
-                }
-                #[cfg(not(unix))]
-                {
-                    Err(error(
+                    set("password", secret("password"));
+                } else {
+                    #[cfg(not(unix))]
+                    return Err(error(
                         "unsupported",
                         "SFTP is supported on macOS and Linux only",
-                    ))
-                }
-                #[cfg(unix)]
-                {
-                    let mut b = services::Sftp::default()
-                        .endpoint(&endpoint)
-                        .root(&root)
-                        .user(&c.username)
-                        .known_hosts_strategy("Accept");
-                    match optional("authentication", "ssh_config")?.as_str() {
-                        "ssh_config" | "ssh_agent" => {},
-                        "private_key" => {
-                            let key = required_secret("private_key")?;
-                            if !Path::new(key).is_absolute() { return Err(error("configuration", "SFTP private_key must be an absolute OpenSSH key-file path")); }
-                            b = b.key(key);
-                        },
-                        _ => return Err(error("unsupported", "SFTP supports ssh_config, ssh_agent and private_key; password authentication is not supported")),
+                    ));
+                    #[cfg(unix)]
+                    {
+                        set("known_hosts_strategy", "Accept");
+                        match optional("authentication", "ssh_config")?.as_str() {
+                            "ssh_config" | "ssh_agent" => {},
+                            "private_key" => {
+                                let key = required_secret("private_key")?;
+                                if !Path::new(key).is_absolute() {
+                                    return Err(error("configuration", "SFTP private_key must be an absolute OpenSSH key-file path"));
+                                }
+                                set("key", key);
+                            },
+                            _ => return Err(error("unsupported", "SFTP supports ssh_config, ssh_agent and private_key; password authentication is not supported")),
+                        }
                     }
-                    Operator::new(b).map(|b| b.finish()).map_err(remote)
                 }
             }
             "s3" => {
-                let mut b = services::S3::default()
-                    .endpoint(text(config, "endpoint")?)
-                    .region(text(config, "region")?)
-                    .bucket(text(config, "bucket")?)
-                    .root(&root)
-                    .access_key_id(required_secret("access_key")?)
-                    .secret_access_key(required_secret("secret_key")?)
-                    .disable_config_load()
-                    .disable_ec2_metadata();
+                for key in ["endpoint", "region", "bucket"] {
+                    set(key, text(config, key)?);
+                }
+                set("access_key_id", required_secret("access_key")?);
+                set("secret_access_key", required_secret("secret_key")?);
+                set("disable_config_load", "true");
+                set("disable_ec2_metadata", "true");
+                set(
+                    "enable_virtual_host_style",
+                    if flag(config, "path_style", true)? {
+                        "false"
+                    } else {
+                        "true"
+                    },
+                );
                 if !secret("session_token").is_empty() {
-                    b = b.session_token(secret("session_token"));
+                    set("session_token", secret("session_token"));
                 }
-                if !flag(config, "path_style", true)? {
-                    b = b.enable_virtual_host_style();
-                }
-                Operator::new(b).map(|b| b.finish()).map_err(remote)
             }
             "webdav" => {
-                let authentication = optional("authentication", "basic")?;
-                let mut b = services::Webdav::default()
-                    .endpoint(text(config, "endpoint")?)
-                    .root(&root);
-                match authentication.as_str() {
+                set("endpoint", text(config, "endpoint")?);
+                match optional("authentication", "basic")?.as_str() {
                     "basic" => {
                         if c.username.is_empty() {
                             return Err(error("configuration", "WebDAV username is required"));
                         }
-                        b = b
-                            .username(&c.username)
-                            .password(required_secret("password")?);
+                        set("username", &c.username);
+                        set("password", required_secret("password")?);
                     }
-                    "bearer" => b = b.token(required_secret("bearer_token")?),
+                    "bearer" => set("token", required_secret("bearer_token")?),
                     _ => {
                         return Err(error(
                             "configuration",
@@ -332,31 +322,14 @@ impl ConnectionRequest {
                         ))
                     }
                 }
-                let layer = crate::webdav::StreamingLayer::new(
-                    text(config, "endpoint")?,
-                    &root,
-                    &c.username,
-                    secret("password"),
-                    if authentication == "bearer" {
-                        Some(secret("bearer_token"))
-                    } else {
-                        None
-                    },
-                )?;
-                Operator::new(b)
-                    .map(|b| b.finish().layer(layer))
-                    .map_err(remote)
             }
             "webhdfs" => {
-                let mut b = services::Webhdfs::default()
-                    .endpoint(text(config, "endpoint")?)
-                    .root(&root);
+                set("endpoint", text(config, "endpoint")?);
                 if flag(config, "use_delegation_token", false)? {
-                    b = b.delegation(required_secret("delegation_token")?);
+                    set("delegation", required_secret("delegation_token")?);
                 } else {
-                    b = b.user_name(text(config, "simple_user")?);
+                    set("user_name", text(config, "simple_user")?);
                 }
-                Operator::new(b).map(|b| b.finish()).map_err(remote)
             }
             "hdfs-native" => {
                 let node = text(config, "name_node_uri")?;
@@ -372,18 +345,20 @@ impl ConnectionRequest {
                         "NameNode URI must have an hdfs:// authority",
                     ));
                 }
+                set("name_node", node);
                 let options = hadoop_options(text(config, "hadoop_config_directory")?)?;
-                Operator::new(
-                    services::HdfsNative::default()
-                        .name_node(node)
-                        .root(&root)
-                        .options(options),
-                )
-                .map(|b| b.finish())
-                .map_err(remote)
+                set(
+                    "options",
+                    &serde_json::to_string(&options)
+                        .map_err(|_| error("configuration", "Invalid Hadoop options"))?,
+                );
             }
             _ => unreachable!(),
         }
+        Ok(Configuration {
+            service: protocol.into(),
+            parameters: values,
+        })
     }
 }
 
