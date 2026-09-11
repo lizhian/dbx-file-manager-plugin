@@ -17,55 +17,6 @@ pub const BUFFER_SIZE: usize = 64 * 1024;
 pub const APPEND_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 pub const INLINE_LIMIT: u64 = 4 * 1024 * 1024;
 
-pub fn capabilities(s: &Session) -> Value {
-    let c = s.operator.info().full_capability();
-    let writable = !s.read_only;
-    let mut result = json!({"list": c.list, "read": c.read, "stat": c.stat,
-        "write": writable && c.write && c.stat, "mkdir": writable && c.create_dir && c.stat,
-        "delete": writable && c.delete && c.stat,
-        "copy": writable && c.stat && (c.copy || (c.read && c.write)),
-        "rename": writable && c.stat && (c.rename || ((c.copy || (c.read && c.write)) && c.delete)),
-        "upload": writable && c.stat && c.write && c.delete && (c.rename || c.copy || c.read), "download": c.read,
-        "edit": writable && c.stat && c.read && c.write,
-        "service": s.storage_scheme(), "verification": if s.verified { "verified" } else { "configuration_only" },
-        "recursiveDelete": false, "recursiveCopy": false, "atomicRename": false, "atomicNoClobber": false,
-        "nativeCopy": c.copy, "nativeRename": c.rename,
-        "copyMode": if c.copy { "native" } else { "stream" },
-        "renameMode": if c.rename { "native" } else { "copy-delete" },
-        "directoryRenameMode": "copy-delete", "readOnly": s.read_only});
-    result["capabilities"] = json!([
-        "list", "read", "stat", "write", "mkdir", "delete", "copy", "rename", "upload", "download"
-    ]
-    .into_iter()
-    .filter(|key| result[*key] == true)
-    .collect::<Vec<_>>());
-    if false {
-        if let Ok(service) = crate::generic::service(&s.storage_scheme()) {
-            result["configurationReference"] = json!(service.reference);
-        }
-    }
-    result
-}
-
-pub fn require(s: &Session, capability: &str) -> Result<()> {
-    if matches!(
-        capability,
-        "write" | "mkdir" | "delete" | "copy" | "rename" | "upload" | "edit"
-    ) {
-        s.writable()?;
-    }
-    if capabilities(s)[capability] != true {
-        return Err(error(
-            "unsupported",
-            &format!(
-                "{} does not support {capability} with the required file-management guarantees",
-                s.storage_scheme()
-            ),
-        ));
-    }
-    Ok(())
-}
-
 pub async fn file_metadata(op: &Operator, path: &str) -> Result<Option<Metadata>> {
     if !op.info().full_capability().stat {
         uri::non_root(path)?;
@@ -96,7 +47,7 @@ pub async fn reader(op: &Operator, path: &str) -> Result<impl tokio::io::AsyncRe
 
 pub fn entry(s: &Session, path: &str, m: &Metadata) -> Value {
     let mut result = json!({"name": path.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("/"),
-        "uri": uri::uri(s.storage_scheme(), path),
+        "uri": s.uri(path),
         "kind": if m.is_dir() { "directory" } else if m.is_file() { "file" } else { "other" }});
     if m.is_file() {
         result["size"] = json!(m.content_length());
@@ -168,13 +119,13 @@ pub async fn destination(op: &Operator, path: &str, overwrite: bool) -> Result<(
 
 pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if method == "filesystem/capabilities" {
-        return Ok(capabilities(s));
+        return Ok(s.capabilities());
     }
     let capability = match method {
         "filesystem/createDirectory" => "mkdir",
         other => other.strip_prefix("filesystem/").unwrap_or(other),
     };
-    require(s, capability)?;
+    s.require(capability)?;
     let mutating = matches!(
         method,
         "filesystem/write"
@@ -192,8 +143,8 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if matches!(method, "filesystem/copy" | "filesystem/rename") {
         return move_or_copy(s, method, p).await;
     }
-    let path = uri::path(text(p, "uri")?, s.storage_scheme())?;
-    let op = &s.operator;
+    let path = s.path(text(p, "uri")?)?;
+    let op = &s.operator();
     match method {
         "filesystem/stat" => {
             let m = stat(op, &path).await?;
@@ -245,7 +196,8 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
             }
             destination(op, path, overwrite).await?;
             let cap = op.info().full_capability();
-            let empty_ftp = bytes.is_empty() && op.info().scheme() == "ftp";
+            let needs_empty_write =
+                bytes.is_empty() && cap.write_can_append && !cap.write_can_multi;
             let mut write = op.write_with(path, bytes);
             if let Some(etag) = p.get("etag").filter(|v| !v.is_null()) {
                 let etag = etag
@@ -263,7 +215,7 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
                 write = write.if_not_exists(true);
             }
             write.await.map_err(remote)?;
-            if empty_ftp {
+            if needs_empty_write {
                 write_empty_file(op, path).await?;
             }
             Ok(json!({"success": true}))
@@ -331,11 +283,11 @@ async fn list(s: &Session, path: &str, p: &Value) -> Result<Value> {
         let cursor = cursors.remove(token).unwrap();
         (cursor.lister, cursor.pending)
     } else {
-        if !stat(&s.operator, path).await?.is_dir() {
+        if !stat(&s.operator(), path).await?.is_dir() {
             return Err(error("configuration", "Listing requires a directory"));
         }
         (
-            s.operator
+            s.operator()
                 .lister_with(&dir)
                 // MinIO can report IsTruncated=false when max-keys=1 returns only the directory marker.
                 .limit(limit.max(2))
@@ -359,8 +311,8 @@ async fn list(s: &Session, path: &str, p: &Value) -> Result<Value> {
                 }
                 Some(e) if e.path().trim_matches('/') == dir.trim_matches('/') => continue,
                 Some(e) => {
-                    let generated = uri::uri(s.storage_scheme(), e.path());
-                    let checked = uri::path(&generated, s.storage_scheme())?;
+                    let generated = s.uri(e.path());
+                    let checked = s.path(&generated)?;
                     if !path.is_empty() && !checked.starts_with(&dir) {
                         return Err(error(
                             "backend",
@@ -495,15 +447,15 @@ async fn move_or_copy(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if flag(p, "recursive", false)? {
         return Err(error("unsupported", "Recursive copy is not supported"));
     }
-    let source = uri::path(text(p, "sourceUri")?, s.storage_scheme())?;
-    let target = uri::path(text(p, "targetUri")?, s.storage_scheme())?;
+    let source = s.path(text(p, "sourceUri")?)?;
+    let target = s.path(text(p, "targetUri")?)?;
     let source = uri::non_root(&source)?;
     let target = uri::non_root(&target)?;
     if source == target || target.starts_with(&format!("{source}/")) {
         return Err(error("configuration", "Source and destination overlap"));
     }
     let overwrite = flag(p, "overwrite", false)?;
-    let op = &s.operator;
+    let op = &s.operator();
     let is_dir = stat(op, source).await?.is_dir();
     if method == "filesystem/copy" {
         copy_file(op, source, target, overwrite).await?;

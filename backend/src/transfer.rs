@@ -144,8 +144,8 @@ impl Transfers {
         if upload {
             session.writable()?;
         }
-        operations::require(&session, if upload { "upload" } else { "download" })?;
-        let path = uri::path(text(p, "uri")?, session.storage_scheme())?;
+        session.require(if upload { "upload" } else { "download" })?;
+        let path = session.path(text(p, "uri")?)?;
         uri::non_root(&path)?;
         let path = path.trim_end_matches('/').to_string();
         let local = absolute_local_path(text(p, "localPath")?)?;
@@ -156,17 +156,17 @@ impl Transfers {
         let task = Arc::new(Task {
             snapshot: Mutex::new(Snapshot {
                 transfer_id: id.clone(),
-                provider_id: format!("{}.files", crate::PLUGIN_ID),
+                provider_id: text(p, "providerId")?.to_owned(),
                 connection_id: session.id.clone(),
                 direction: if upload { "upload" } else { "download" }.into(),
-                uri: uri::uri(session.storage_scheme(), &path),
+                uri: session.uri(&path),
                 state: "queued".into(),
                 bytes_transferred: 0,
                 total_bytes: None,
                 error: None,
                 host_download_lease_id: temporary.as_ref().map(|(id, _)| id.clone()),
             }),
-            cancel: session.closed.child_token(),
+            cancel: session.cancellation().child_token(),
             created: Instant::now(),
             last_progress: Mutex::new(Instant::now()),
             finished: Notify::new(),
@@ -391,7 +391,7 @@ async fn upload_file(
     let total = metadata.len();
     task.progress(0, Some(total));
     control
-        .run(operations::destination(&s.operator, path, overwrite))
+        .run(operations::destination(&s.operator(), path, overwrite))
         .await??;
     let parent = path
         .rsplit_once('/')
@@ -399,9 +399,9 @@ async fn upload_file(
         .unwrap_or_default();
     // FTP stat is implemented using LIST, which can omit dotfiles even when they exist.
     let temporary = format!("{parent}dbx-upload-{}.tmp", task.snapshot().transfer_id);
-    let cap = s.operator.info().full_capability();
-    let mut builder = s.operator.writer_with(&temporary);
-    if cap.write_can_append && (s.storage_scheme() == "ftp" || !cap.write_can_multi) {
+    let cap = s.raw_capability();
+    let mut builder = s.operator().writer_with(&temporary);
+    if cap.write_can_append && !cap.write_can_multi {
         builder = builder.append(true);
         if !cap.write_can_multi {
             builder = builder.chunk(operations::APPEND_CHUNK_SIZE);
@@ -457,23 +457,23 @@ async fn upload_file(
         control.run(writer.close()).await?.map_err(remote)?;
         if total == 0 {
             control
-                .run(operations::write_empty_file(&s.operator, &temporary))
+                .run(operations::write_empty_file(&s.operator(), &temporary))
                 .await??;
         }
         control
-            .run(operations::destination(&s.operator, path, overwrite))
+            .run(operations::destination(&s.operator(), path, overwrite))
             .await??;
         control.check()?;
         publication_started = true;
         if cap.rename {
             control
-                .run(s.operator.rename(&temporary, path))
+                .run(s.operator().rename(&temporary, path))
                 .await?
                 .map_err(remote)?;
         } else {
             control
                 .run(operations::copy_file(
-                    &s.operator,
+                    &s.operator(),
                     &temporary,
                     path,
                     overwrite,
@@ -484,11 +484,10 @@ async fn upload_file(
     }
     .await;
     if result.is_err() {
-        if s.storage_scheme() == "ftp" {
-            // FTP abort is unsupported. Finish its data stream before returning the pooled control connection.
+        if matches!(tokio::time::timeout(CLEANUP_TIMEOUT, writer.abort()).await,
+            Ok(Err(e)) if e.kind() == opendal::ErrorKind::Unsupported)
+        {
             let _ = tokio::time::timeout(CLEANUP_TIMEOUT, writer.close()).await;
-        } else {
-            let _ = tokio::time::timeout(CLEANUP_TIMEOUT, writer.abort()).await;
         }
     }
     drop(writer);
@@ -502,7 +501,8 @@ async fn cleanup_upload(
     publication_started: bool,
     path: &str,
 ) -> Result<()> {
-    let cleaned = match tokio::time::timeout(CLEANUP_TIMEOUT, s.operator.delete(temporary)).await {
+    let cleaned = match tokio::time::timeout(CLEANUP_TIMEOUT, s.operator().delete(temporary)).await
+    {
         Ok(Ok(_)) => true,
         Ok(Err(e)) if e.kind() == opendal::ErrorKind::NotFound => true,
         _ => false,
@@ -576,7 +576,7 @@ async fn download_file(
     temporary_directory: Option<&Path>,
 ) -> Result<()> {
     let metadata = control
-        .run(operations::file_metadata(&s.operator, path))
+        .run(operations::file_metadata(&s.operator(), path))
         .await??;
     let total = metadata.map(|m| m.content_length());
     task.progress(0, total);
@@ -610,7 +610,9 @@ async fn download_file(
         .map_err(|_| error("local_write", "Cannot open download temporary file"))?;
     let mut output = tokio::fs::File::from_std(file);
     let result: Result<()> = async {
-        let mut reader = control.run(operations::reader(&s.operator, path)).await??;
+        let mut reader = control
+            .run(operations::reader(&s.operator(), path))
+            .await??;
         let mut buffer = vec![0; BUFFER_SIZE];
         let mut bytes = 0u64;
         loop {

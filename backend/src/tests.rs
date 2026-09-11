@@ -3,16 +3,26 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use opendal::{services, Operator};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+fn install_session(p: &Plugin, id: String, session: Arc<Session>) {
+    let mut request = connection("ftp");
+    request["connection"]["id"] = json!(id);
+    p.descriptors.lock().unwrap().insert(
+        id.clone(),
+        Arc::new(ConnectionRequest::parse(request).unwrap()),
+    );
+    p.sessions.lock().unwrap().insert(id, session);
+}
+
 fn memory(read_only: bool) -> (Plugin, Arc<Session>) {
     let p = Plugin::new().unwrap();
     let op = Operator::new(services::Memory::default()).unwrap().finish();
     let s = Arc::new(Session::new("test".into(), op, read_only));
-    p.sessions.lock().unwrap().insert(s.id.clone(), s.clone());
+    install_session(&p, s.id.clone(), s.clone());
     (p, s)
 }
 
 fn params() -> Value {
-    json!({"providerId": format!("{PLUGIN_ID}.ftp.files"), "connectionId": "test", "uri": "opendal:"})
+    json!({"providerId": format!("{PLUGIN_ID}.ftp.files"), "connectionId": "test", "uri": "opendal:/"})
 }
 
 #[test]
@@ -95,7 +105,7 @@ fn live_workbench_connections(generic: bool) {
         let scheme = if generic { "opendal" } else { protocol };
         if generic {
             let parameters = match protocol {
-                "ftp" => "endpoint=ftp:/127.0.0.1:2121\nroot=/ftp/dbx/\nuser=dbx\npassword=dbx-password".into(),
+                "ftp" => "endpoint=ftp://127.0.0.1:2121\nroot=/ftp/dbx/\nuser=dbx\npassword=dbx-password".into(),
                 "sftp" => format!("endpoint=ssh://127.0.0.1:2222\nroot=/config/\nuser=dbx\nkey={}\nknown_hosts_strategy=accept", repo.join("docs/tests/runtime/sftp/id_ed25519").display()),
                 "s3" => "endpoint=http://127.0.0.1:9000\nroot=/\nregion=us-east-1\nbucket=dbx\naccess_key_id=dbx-access-key\nsecret_access_key=dbx-secret-key".into(),
                 "webdav" => "endpoint=http://127.0.0.1:8080\nroot=/\nusername=dbx\npassword=dbx-password".into(),
@@ -128,7 +138,7 @@ fn live_workbench_connections(generic: bool) {
                 response
             }
         };
-        let folder = format!("{scheme}:/dbx-workbench-{}", uuid::Uuid::new_v4());
+        let folder = format!("opendal:/dbx-workbench-{}", uuid::Uuid::new_v4());
         let file = format!("{folder}/original.txt");
         invoke("workbench/createDirectory", json!({"uri": folder}));
         let task = invoke(
@@ -210,17 +220,17 @@ fn wb(p: &Plugin, method: &str, extras: Value) -> Value {
 fn workbench_copy_and_local_open_authorization() {
     let (p, s) = memory(false);
     p.runtime
-        .block_on(s.operator.write("source.txt", "source"))
+        .block_on(s.operator().write("source.txt", "source"))
         .unwrap();
     let copied = wb(
         &p,
         "copy",
-        json!({"sourceUri":"opendal:source.txt", "targetUri":"opendal:copy.txt", "overwrite":false}),
+        json!({"sourceUri":"opendal:/source.txt", "targetUri":"opendal:/copy.txt", "overwrite":false}),
     );
     assert_eq!(copied["ok"], true);
     assert_eq!(
         p.runtime
-            .block_on(s.operator.read("copy.txt"))
+            .block_on(s.operator().read("copy.txt"))
             .unwrap()
             .to_vec(),
         b"source"
@@ -240,9 +250,9 @@ fn workbench_preview_chunks_and_conflict_checked_text_save() {
     use sha2::{Digest, Sha256};
     let (p, s) = memory(false);
     p.runtime
-        .block_on(s.operator.write("edit.txt", "original"))
+        .block_on(s.operator().write("edit.txt", "original"))
         .unwrap();
-    let preview = wb(&p, "preview", json!({"uri": "opendal:edit.txt"}));
+    let preview = wb(&p, "preview", json!({"uri": "opendal:/edit.txt"}));
     assert_eq!(preview["ok"], true);
     let token = &preview["value"]["token"];
     assert_eq!(
@@ -260,7 +270,7 @@ fn workbench_preview_chunks_and_conflict_checked_text_save() {
     );
     let save = json!({"token": token, "size": draft.len(), "digest": format!("{:x}", Sha256::digest(draft))});
     p.runtime
-        .block_on(s.operator.write("edit.txt", "concurrent change"))
+        .block_on(s.operator().write("edit.txt", "concurrent change"))
         .unwrap();
     assert_eq!(
         wb(&p, "saveText", save.clone())["error"]["details"]["code"],
@@ -268,7 +278,7 @@ fn workbench_preview_chunks_and_conflict_checked_text_save() {
     );
     assert_eq!(
         p.runtime
-            .block_on(s.operator.read("edit.txt"))
+            .block_on(s.operator().read("edit.txt"))
             .unwrap()
             .to_vec(),
         b"concurrent change"
@@ -278,7 +288,7 @@ fn workbench_preview_chunks_and_conflict_checked_text_save() {
     assert_eq!(wb(&p, "saveText", force)["ok"], true);
     assert_eq!(
         p.runtime
-            .block_on(s.operator.read("edit.txt"))
+            .block_on(s.operator().read("edit.txt"))
             .unwrap()
             .to_vec(),
         draft.as_bytes()
@@ -294,18 +304,18 @@ fn workbench_preview_chunks_and_conflict_checked_text_save() {
 fn workbench_rejects_binary_oversize_cross_connection_and_incomplete_drafts() {
     let (p, s) = memory(false);
     p.runtime.block_on(async {
-        s.operator.write("binary", vec![0, 1, 2]).await.unwrap();
-        s.operator
+        s.operator().write("binary", vec![0, 1, 2]).await.unwrap();
+        s.operator()
             .write("large", vec![b'x'; 2 * 1024 * 1024 + 1])
             .await
             .unwrap();
-        s.operator.write("text", "hello").await.unwrap();
+        s.operator().write("text", "hello").await.unwrap();
     });
     assert_eq!(
-        wb(&p, "preview", json!({"uri": "opendal:binary"}))["error"]["details"]["code"],
+        wb(&p, "preview", json!({"uri": "opendal:/binary"}))["error"]["details"]["code"],
         "unsupported"
     );
-    let large = wb(&p, "preview", json!({"uri": "opendal:large"}));
+    let large = wb(&p, "preview", json!({"uri": "opendal:/large"}));
     assert_eq!(large["value"]["truncated"], true);
     for method in ["stageText", "saveText"] {
         assert_eq!(
@@ -313,7 +323,7 @@ fn workbench_rejects_binary_oversize_cross_connection_and_incomplete_drafts() {
             "unsupported"
         );
     }
-    let token = wb(&p, "preview", json!({"uri": "opendal:text"}))["value"]["token"].clone();
+    let token = wb(&p, "preview", json!({"uri": "opendal:/text"}))["value"]["token"].clone();
     assert_eq!(
         wb(
             &p,
@@ -335,14 +345,11 @@ fn workbench_rejects_binary_oversize_cross_connection_and_incomplete_drafts() {
         false
     );
     assert_eq!(
-        wb(&p, "preview", json!({"uri": "opendal:../secret"}))["ok"],
+        wb(&p, "preview", json!({"uri": "opendal:/../secret"}))["ok"],
         false
     );
-    let other = Arc::new(Session::new(
-        "other".into(), s.operator.clone(),
-        false,
-    ));
-    p.sessions.lock().unwrap().insert("other".into(), other);
+    let other = Arc::new(Session::new("other".into(), s.operator().clone(), false));
+    install_session(&p, "other".into(), other);
     assert_eq!(
         wb(
             &p,
@@ -355,7 +362,7 @@ fn workbench_rejects_binary_oversize_cross_connection_and_incomplete_drafts() {
         wb(
             &p,
             "startTransfer",
-            json!({"token": "invented", "localPath": "/tmp/forged", "uri": "opendal:text"})
+            json!({"token": "invented", "localPath": "/tmp/forged", "uri": "opendal:/text"})
         )["ok"],
         false
     );
@@ -366,23 +373,23 @@ fn workbench_large_text_previews_only_first_thousand_lines() {
     let (p, s) = memory(false);
     let first = "中文\r\n".repeat(1000);
     p.runtime.block_on(async {
-        s.operator
+        s.operator()
             .write(
                 "large-lines",
                 format!("{first}{}", "x".repeat(21 * 1024 * 1024)),
             )
             .await
             .unwrap();
-        s.operator
+        s.operator()
             .write("small-lines", "x\n".repeat(1001))
             .await
             .unwrap();
-        s.operator
+        s.operator()
             .write("long-line", "中".repeat(7 * 1024 * 1024))
             .await
             .unwrap();
     });
-    let preview = wb(&p, "preview", json!({"uri": "opendal:large-lines"}));
+    let preview = wb(&p, "preview", json!({"uri": "opendal:/large-lines"}));
     assert_eq!(preview["value"]["truncated"], true);
     assert_eq!(preview["value"]["size"], first.len());
     let chunk = wb(
@@ -391,10 +398,10 @@ fn workbench_large_text_previews_only_first_thousand_lines() {
         json!({"token": preview["value"]["token"], "offset": 0}),
     );
     assert_eq!(chunk["value"]["dataBase64"], STANDARD.encode(first));
-    let small = wb(&p, "preview", json!({"uri": "opendal:small-lines"}));
+    let small = wb(&p, "preview", json!({"uri": "opendal:/small-lines"}));
     assert_eq!(small["value"]["truncated"], false);
     assert_eq!(small["value"]["size"], 2002);
-    let long = wb(&p, "preview", json!({"uri": "opendal:long-line"}));
+    let long = wb(&p, "preview", json!({"uri": "opendal:/long-line"}));
     assert_eq!(long["ok"], true);
     assert_eq!(long["value"]["byteLimited"], true);
     assert_eq!(long["value"]["size"].as_u64().unwrap() % 3, 0);
@@ -406,9 +413,9 @@ fn workbench_images_are_signature_checked_chunked_and_not_editable() {
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
     bytes.resize(1024 * 1024, 1);
     p.runtime
-        .block_on(s.operator.write("image", bytes.clone()))
+        .block_on(s.operator().write("image", bytes.clone()))
         .unwrap();
-    let preview = wb(&p, "preview", json!({"uri": "opendal:image"}));
+    let preview = wb(&p, "preview", json!({"uri": "opendal:/image"}));
     assert_eq!(preview["value"]["kind"], "image");
     let token = &preview["value"]["token"];
     let chunk = wb(&p, "previewChunk", json!({"token": token, "offset": 0}));
@@ -430,9 +437,10 @@ fn workbench_images_are_signature_checked_chunked_and_not_editable() {
     let (read_only, ro) = memory(true);
     read_only
         .runtime
-        .block_on(ro.operator.write("text", "hello"))
+        .block_on(ro.operator().write("text", "hello"))
         .unwrap();
-    let token = wb(&read_only, "preview", json!({"uri": "opendal:text"}))["value"]["token"].clone();
+    let token =
+        wb(&read_only, "preview", json!({"uri": "opendal:/text"}))["value"]["token"].clone();
     assert_eq!(
         wb(
             &read_only,
@@ -579,7 +587,7 @@ fn config_replacement_drains_old_generation_and_invalidates_cursors() {
     let task = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:a", "localPath": temp.path().join("unused")}),
+        json!({"uri": "opendal:/a", "localPath": temp.path().join("unused")}),
     )
     .unwrap();
     let mut changed = connection("ftp");
@@ -587,8 +595,8 @@ fn config_replacement_drains_old_generation_and_invalidates_cursors() {
     p.invoke("connection/connect", changed, None).unwrap();
     let new = p.sessions.lock().unwrap()["test"].clone();
     assert!(new.generation > old.generation);
-    assert!(old.closed.is_cancelled());
-    assert!(!new.closed.is_cancelled());
+    assert!(old.cancellation().is_cancelled());
+    assert!(!new.cancellation().is_cancelled());
     assert_eq!(builds.load(Ordering::SeqCst), 2);
     assert_eq!(
         wait_task(&p, task["transferId"].as_str().unwrap())["state"],
@@ -599,7 +607,7 @@ fn config_replacement_drains_old_generation_and_invalidates_cursors() {
             call(
                 &p,
                 "filesystem/write",
-                json!({"uri": "opendal:new", "dataBase64": ""})
+                json!({"uri": "opendal:/new", "dataBase64": ""})
             )
             .unwrap_err()
         ),
@@ -630,7 +638,7 @@ fn idle_reclaims_operator_but_preserves_descriptor_and_rebuilds_once() {
         );
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(old.closed.is_cancelled());
+    assert!(old.cancellation().is_cancelled());
     assert!(p.descriptors.lock().unwrap().contains_key("test"));
     call(&p, "filesystem/stat", json!({})).unwrap();
     let rebuilt = p.sessions.lock().unwrap()["test"].clone();
@@ -654,24 +662,24 @@ fn idle_reclaims_operator_but_preserves_descriptor_and_rebuilds_once() {
 #[test]
 fn idle_never_evicts_queued_transfer_and_reclaims_after_cleanup() {
     let (p, _) = memory(false);
-    let op = p.sessions.lock().unwrap()["test"].operator.clone();
+    let op = p.sessions.lock().unwrap()["test"].operator().clone();
     let mut session = Session::new("test".into(), op, false);
     session.idle_timeout = Duration::ZERO;
     let s = Arc::new(session);
     let seed_activity = s.activity();
-    p.sessions.lock().unwrap().insert("test".into(), s.clone());
+    install_session(&p, "test".into(), s.clone());
     let _slots = p.runtime.block_on(s.permits.acquire_many(2)).unwrap();
     let temp = tempfile::tempdir().unwrap();
     let task = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:file", "localPath": temp.path().join("target")}),
+        json!({"uri": "opendal:/file", "localPath": temp.path().join("target")}),
     )
     .unwrap();
     drop(seed_activity);
     evict_idle(&p.sessions);
     assert!(p.sessions.lock().unwrap().contains_key("test"));
-    assert!(!s.closed.is_cancelled());
+    assert!(!s.cancellation().is_cancelled());
     call(
         &p,
         "filesystem/transfer/cancel",
@@ -703,7 +711,7 @@ fn saved_query_timeout_controls_rpc_and_zero_waits_until_disconnect() {
                     .send(call(
                         plugin,
                         "filesystem/read",
-                        json!({"uri": "opendal:source"}),
+                        json!({"uri": "opendal:/source"}),
                     ))
                     .unwrap()
             });
@@ -749,7 +757,7 @@ fn saved_query_timeout_controls_transfer_without_per_task_override() {
         let task = call(
             &p,
             "filesystem/transfer/startDownload",
-            json!({"uri": "opendal:source", "localPath": temp.path().join("target")}),
+            json!({"uri": "opendal:/source", "localPath": temp.path().join("target")}),
         )
         .unwrap();
         if seconds == 0 {
@@ -845,26 +853,26 @@ fn uri_rejects_authorities_traversal_and_ambiguous_encodings() {
     for path in [
         "ftp:/host/a",
         "ftp://a",
-        "opendal:a",
-        "opendal:../a",
-        "opendal:%2e%2e/a",
-        "opendal:%252e%252e/a",
-        "opendal:%2fa",
-        "opendal:%5ca",
-        "opendal:a\\b",
-        "opendal:a?b",
-        "opendal:a#b",
-        "opendal:a//b",
-        "opendal:a/./b",
-        "opendal:%00",
-        "opendal:%",
-        "opendal:%xy",
-        "opendal:%ff",
+        "s3:/a",
+        "opendal:/../a",
+        "opendal:/%2e%2e/a",
+        "opendal:/%252e%252e/a",
+        "opendal:/%2fa",
+        "opendal:/%5ca",
+        "opendal:/a\\b",
+        "opendal:/a?b",
+        "opendal:/a#b",
+        "opendal:/a//b",
+        "opendal:/a/./b",
+        "opendal:/%00",
+        "opendal:/%",
+        "opendal:/%xy",
+        "opendal:/%ff",
     ] {
-        assert!(uri::path(path, "ftp").is_err(), "Accepted {path}");
+        assert!(uri::path(path, "opendal").is_err(), "Accepted {path}");
     }
-    assert_eq!(uri::path("opendal:", "ftp").unwrap(), "");
-    assert_eq!(uri::path("opendal:a%20b/c/", "ftp").unwrap(), "a b/c/");
+    assert_eq!(uri::path("opendal:/", "opendal").unwrap(), "");
+    assert_eq!(uri::path("opendal:/a%20b/c/", "opendal").unwrap(), "a b/c/");
     assert_eq!(
         uri::path(&uri::uri("ftp", "a #?%/b"), "ftp").unwrap(),
         "a #?%/b"
@@ -975,7 +983,7 @@ fn provider_binding_and_root_mutations_are_rejected() {
         "filesystem/delete",
     ] {
         assert_eq!(
-            code(call(&p, method, json!({"uri": "opendal:"})).unwrap_err()),
+            code(call(&p, method, json!({"uri": "opendal:/"})).unwrap_err()),
             "configuration"
         );
     }
@@ -987,13 +995,13 @@ fn filesystem_memory_round_trip_and_no_clobber() {
     call(
         &p,
         "filesystem/createDirectory",
-        json!({"uri": "opendal:dir"}),
+        json!({"uri": "opendal:/dir"}),
     )
     .unwrap();
     call(
         &p,
         "filesystem/write",
-        json!({"uri": "opendal:dir/source", "dataBase64": STANDARD.encode(b"abcdef")}),
+        json!({"uri": "opendal:/dir/source", "dataBase64": STANDARD.encode(b"abcdef")}),
     )
     .unwrap();
     assert_eq!(
@@ -1001,7 +1009,7 @@ fn filesystem_memory_round_trip_and_no_clobber() {
             call(
                 &p,
                 "filesystem/write",
-                json!({"uri": "opendal:dir/source", "dataBase64": ""})
+                json!({"uri": "opendal:/dir/source", "dataBase64": ""})
             )
             .unwrap_err()
         ),
@@ -1010,38 +1018,38 @@ fn filesystem_memory_round_trip_and_no_clobber() {
     let read = call(
         &p,
         "filesystem/read",
-        json!({"uri": "opendal:dir/source", "maxBytes": 3}),
+        json!({"uri": "opendal:/dir/source", "maxBytes": 3}),
     )
     .unwrap();
     assert_eq!(read["dataBase64"], STANDARD.encode(b"abc"));
     assert_eq!(read["truncated"], true);
-    let stat = call(&p, "filesystem/stat", json!({"uri": "opendal:dir/source"})).unwrap();
+    let stat = call(&p, "filesystem/stat", json!({"uri": "opendal:/dir/source"})).unwrap();
     assert_eq!(stat["size"], 6);
     call(
         &p,
         "filesystem/copy",
-        json!({"sourceUri": "opendal:dir/source", "targetUri": "opendal:dir/copy"}),
+        json!({"sourceUri": "opendal:/dir/source", "targetUri": "opendal:/dir/copy"}),
     )
     .unwrap();
     call(
         &p,
         "filesystem/rename",
-        json!({"sourceUri": "opendal:dir/copy", "targetUri": "opendal:dir/moved"}),
+        json!({"sourceUri": "opendal:/dir/copy", "targetUri": "opendal:/dir/moved"}),
     )
     .unwrap();
     assert_eq!(
-        code(call(&p, "filesystem/delete", json!({"uri": "opendal:dir"})).unwrap_err()),
+        code(call(&p, "filesystem/delete", json!({"uri": "opendal:/dir"})).unwrap_err()),
         "directory_not_empty"
     );
     for name in ["source", "moved"] {
         call(
             &p,
             "filesystem/delete",
-            json!({"uri": format!("opendal:dir/{name}")}),
+            json!({"uri": format!("opendal:/dir/{name}")}),
         )
         .unwrap();
     }
-    call(&p, "filesystem/delete", json!({"uri": "opendal:dir"})).unwrap();
+    call(&p, "filesystem/delete", json!({"uri": "opendal:/dir"})).unwrap();
 }
 
 #[test]
@@ -1050,7 +1058,7 @@ fn recursive_copy_delete_and_cross_connection_copy_rejected() {
     call(
         &p,
         "filesystem/createDirectory",
-        json!({"uri": "opendal:dir"}),
+        json!({"uri": "opendal:/dir"}),
     )
     .unwrap();
     assert_eq!(
@@ -1058,7 +1066,7 @@ fn recursive_copy_delete_and_cross_connection_copy_rejected() {
             call(
                 &p,
                 "filesystem/copy",
-                json!({"sourceUri": "opendal:dir", "targetUri": "opendal:other"})
+                json!({"sourceUri": "opendal:/dir", "targetUri": "opendal:/other"})
             )
             .unwrap_err()
         ),
@@ -1069,7 +1077,7 @@ fn recursive_copy_delete_and_cross_connection_copy_rejected() {
             call(
                 &p,
                 "filesystem/delete",
-                json!({"uri": "opendal:dir", "recursive": true})
+                json!({"uri": "opendal:/dir", "recursive": true})
             )
             .unwrap_err()
         ),
@@ -1080,7 +1088,7 @@ fn recursive_copy_delete_and_cross_connection_copy_rejected() {
             call(
                 &p,
                 "filesystem/copy",
-                json!({"sourceUri": "opendal:a", "targetUri": "opendal:b", "targetConnectionId": "other"})
+                json!({"sourceUri": "opendal:/a", "targetUri": "opendal:/b", "targetConnectionId": "other"})
             )
             .unwrap_err()
         ),
@@ -1092,8 +1100,8 @@ fn recursive_copy_delete_and_cross_connection_copy_rejected() {
 fn directory_rename_preserves_contents_and_rejects_overlap() {
     let (p, s) = memory(false);
     p.runtime.block_on(async {
-        s.operator.create_dir("from/nested/").await.unwrap();
-        s.operator
+        s.operator().create_dir("from/nested/").await.unwrap();
+        s.operator()
             .write("from/nested/file", "contents")
             .await
             .unwrap();
@@ -1103,7 +1111,7 @@ fn directory_rename_preserves_contents_and_rejects_overlap() {
             call(
                 &p,
                 "filesystem/rename",
-                json!({"sourceUri": "opendal:from", "targetUri": "opendal:from/nested/other"})
+                json!({"sourceUri": "opendal:/from", "targetUri": "opendal:/from/nested/other"})
             )
             .unwrap_err()
         ),
@@ -1112,21 +1120,21 @@ fn directory_rename_preserves_contents_and_rejects_overlap() {
     call(
         &p,
         "filesystem/rename",
-        json!({"sourceUri": "opendal:from", "targetUri": "opendal:to"}),
+        json!({"sourceUri": "opendal:/from", "targetUri": "opendal:/to"}),
     )
     .unwrap();
     assert_eq!(
         call(
             &p,
             "filesystem/read",
-            json!({"uri": "opendal:to/nested/file"})
+            json!({"uri": "opendal:/to/nested/file"})
         )
         .unwrap()["dataBase64"],
         STANDARD.encode(b"contents")
     );
     assert!(!p
         .runtime
-        .block_on(s.operator.exists("from/nested/file"))
+        .block_on(s.operator().exists("from/nested/file"))
         .unwrap());
 }
 
@@ -1135,7 +1143,7 @@ fn listing_is_bounded_with_opaque_one_use_path_bound_cursors() {
     let (p, s) = memory(false);
     p.runtime.block_on(async {
         for i in 0..1005 {
-            s.operator
+            s.operator()
                 .write(&format!("file-{i:04}"), "x")
                 .await
                 .unwrap();
@@ -1149,7 +1157,7 @@ fn listing_is_bounded_with_opaque_one_use_path_bound_cursors() {
             call(
                 &p,
                 "filesystem/list",
-                json!({"uri": "opendal:other/", "cursor": cursor})
+                json!({"uri": "opendal:/other/", "cursor": cursor})
             )
             .unwrap_err()
         ),
@@ -1172,7 +1180,7 @@ fn write_validation_etag_and_empty_file() {
             call(
                 &p,
                 "filesystem/write",
-                json!({"uri": "opendal:missing", "dataBase64": "", "create": false})
+                json!({"uri": "opendal:/missing", "dataBase64": "", "create": false})
             )
             .unwrap_err()
         ),
@@ -1183,7 +1191,7 @@ fn write_validation_etag_and_empty_file() {
             call(
                 &p,
                 "filesystem/write",
-                json!({"uri": "opendal:missing", "dataBase64": "not-base64!"})
+                json!({"uri": "opendal:/missing", "dataBase64": "not-base64!"})
             )
             .unwrap_err()
         ),
@@ -1192,14 +1200,14 @@ fn write_validation_etag_and_empty_file() {
     call(
         &p,
         "filesystem/write",
-        json!({"uri": "opendal:empty", "dataBase64": ""}),
+        json!({"uri": "opendal:/empty", "dataBase64": ""}),
     )
     .unwrap();
     assert_eq!(
-        call(&p, "filesystem/read", json!({"uri": "opendal:empty"})).unwrap()["dataBase64"],
+        call(&p, "filesystem/read", json!({"uri": "opendal:/empty"})).unwrap()["dataBase64"],
         ""
     );
-    assert_eq!(code(call(&p, "filesystem/write", json!({"uri": "opendal:empty", "dataBase64": "", "overwrite": true, "etag": "unavailable"})).unwrap_err()), "unsupported");
+    assert_eq!(code(call(&p, "filesystem/write", json!({"uri": "opendal:/empty", "dataBase64": "", "overwrite": true, "etag": "unavailable"})).unwrap_err()), "unsupported");
 }
 
 #[test]
@@ -1213,7 +1221,7 @@ fn upload_download_full_snapshots_and_atomic_local_no_clobber() {
     let started = call(
         &p,
         "filesystem/transfer/startUpload",
-        json!({"uri": "opendal:uploaded", "localPath": source}),
+        json!({"uri": "opendal:/uploaded", "localPath": source}),
     )
     .unwrap();
     assert_eq!(started["state"], "queued");
@@ -1226,7 +1234,7 @@ fn upload_download_full_snapshots_and_atomic_local_no_clobber() {
         let start = call(
             &p,
             "filesystem/transfer/startDownload",
-            json!({"uri": "opendal:uploaded", "localPath": target}),
+            json!({"uri": "opendal:/uploaded", "localPath": target}),
         )
         .unwrap();
         let task = wait_task(&p, start["transferId"].as_str().unwrap());
@@ -1248,7 +1256,7 @@ fn queued_cancellation_and_timeout_have_distinct_terminal_states() {
     let start = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:missing", "localPath": target}),
+        json!({"uri": "opendal:/missing", "localPath": target}),
     )
     .unwrap();
     let id = start["transferId"].as_str().unwrap();
@@ -1257,7 +1265,7 @@ fn queued_cancellation_and_timeout_have_distinct_terminal_states() {
     let start = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:missing", "localPath": target, "timeoutMs": 10}),
+        json!({"uri": "opendal:/missing", "localPath": target, "timeoutMs": 10}),
     )
     .unwrap();
     let status = wait_task(&p, start["transferId"].as_str().unwrap());
@@ -1270,7 +1278,7 @@ fn queued_cancellation_and_timeout_have_distinct_terminal_states() {
 fn host_leased_download_preserves_publication_and_echoes_only_lease_id() {
     let (p, s) = memory(false);
     p.runtime
-        .block_on(s.operator.write("source", "payload"))
+        .block_on(s.operator().write("source", "payload"))
         .unwrap();
     let root = tempfile::tempdir().unwrap();
     let directory = tempfile::Builder::new()
@@ -1284,7 +1292,7 @@ fn host_leased_download_preserves_publication_and_echoes_only_lease_id() {
             &p,
             "filesystem/transfer/startDownload",
             json!({
-                "uri": "opendal:source", "localPath": destination,
+                "uri": "opendal:/source", "localPath": destination,
                 "hostDownloadLeaseId": id, "downloadTemporaryDirectory": directory.path()
             }),
         )
@@ -1312,7 +1320,7 @@ fn uploads_waiting_on_mutation_lock_do_not_reserve_global_slots() {
                 &p,
                 "filesystem/transfer/startUpload",
                 json!({
-                    "uri": format!("opendal:target-{index}"), "localPath": source
+                    "uri": format!("opendal:/target-{index}"), "localPath": source
                 }),
             )
             .unwrap()
@@ -1356,7 +1364,7 @@ fn host_download_lease_rejects_incomplete_or_out_of_parent_authority() {
         json!({"hostDownloadLeaseId": id, "downloadTemporaryDirectory": root.path()}),
     ] {
         let mut params =
-            json!({"uri": "opendal:source", "localPath": root.path().join("destination")});
+            json!({"uri": "opendal:/source", "localPath": root.path().join("destination")});
         params
             .as_object_mut()
             .unwrap()
@@ -1378,10 +1386,11 @@ fn host_leased_download_cancel_and_timeout_leave_only_the_empty_lease_directory(
         p.runtime.block_on(op.write("source", "abc")).unwrap();
         let entered = Arc::new(AtomicBool::new(false));
         let s = Arc::new(Session::new(
-            "test".into(), op.layer(SlowRead(entered.clone())),
+            "test".into(),
+            op.layer(SlowRead(entered.clone())),
             false,
         ));
-        p.sessions.lock().unwrap().insert(s.id.clone(), s);
+        install_session(&p, s.id.clone(), s);
         let root = tempfile::tempdir().unwrap();
         let directory = tempfile::Builder::new()
             .prefix(".dbx-download-lease-")
@@ -1390,7 +1399,7 @@ fn host_leased_download_cancel_and_timeout_leave_only_the_empty_lease_directory(
         let target = root.path().join("destination");
         std::fs::write(&target, b"original").unwrap();
         let start = call(&p, "filesystem/transfer/startDownload", json!({
-            "uri": "opendal:source", "localPath": target, "overwrite": true,
+            "uri": "opendal:/source", "localPath": target, "overwrite": true,
             "timeoutMs": if cancel { 5000 } else { 200 },
             "hostDownloadLeaseId": uuid::Uuid::new_v4(), "downloadTemporaryDirectory": directory.path()
         })).unwrap();
@@ -1420,7 +1429,7 @@ fn absolute_paths_and_transfer_ownership_are_enforced() {
                 call(
                     &p,
                     "filesystem/transfer/startDownload",
-                    json!({"uri": "opendal:a", "localPath": path})
+                    json!({"uri": "opendal:/a", "localPath": path})
                 )
                 .unwrap_err()
             ),
@@ -1430,7 +1439,7 @@ fn absolute_paths_and_transfer_ownership_are_enforced() {
     let start = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:missing", "localPath": "/tmp/unused-dbx-test"}),
+        json!({"uri": "opendal:/missing", "localPath": "/tmp/unused-dbx-test"}),
     )
     .unwrap();
     assert_eq!(
@@ -1454,7 +1463,7 @@ fn disconnect_closes_session_and_cancels_queued_transfers() {
     let start = call(
         &p,
         "filesystem/transfer/startDownload",
-        json!({"uri": "opendal:missing", "localPath": "/tmp/unused-dbx-test"}),
+        json!({"uri": "opendal:/missing", "localPath": "/tmp/unused-dbx-test"}),
     )
     .unwrap();
     p.invoke("connection/disconnect", connection("ftp"), None)
@@ -1637,12 +1646,12 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
     let batch = 4 * 1024 * 1024;
     let payload = vec![42u8; 2 * batch + 37];
     p.runtime
-        .block_on(original.operator.write("source", payload.clone()))
+        .block_on(original.operator().write("source", payload.clone()))
         .unwrap();
     let counter = Arc::new(WritePause::default());
     counter.resumed.store(true, Ordering::SeqCst);
     let op = original
-        .operator
+        .operator()
         .clone()
         .layer(PauseWrites(counter.clone()));
     // Model WebHDFS without an atomic-write directory: append works, multi-write/copy do not.
@@ -1654,7 +1663,7 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
         cap
     });
     let session = Arc::new(Session::new("test".into(), op.clone(), false));
-    p.sessions.lock().unwrap().insert("test".into(), session);
+    install_session(&p, "test".into(), session);
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source");
     std::fs::write(&source, &payload).unwrap();
@@ -1662,7 +1671,7 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
         &p,
         "filesystem/transfer/startUpload",
         json!({
-            "uri": "opendal:upload", "localPath": source,
+            "uri": "opendal:/upload", "localPath": source,
         }),
     )
     .unwrap();
@@ -1699,7 +1708,7 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
 #[test]
 fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retry() {
     use opendal::raw::Access;
-    for (protocol, append_only) in [("ftp", false), ("ftp", true), ("s3", false), ("s3", true)] {
+    for append_only in [false, true] {
         for cancel in [true, false] {
             let p = Plugin::new().unwrap();
             let op = Operator::new(services::Memory::default()).unwrap().finish();
@@ -1715,11 +1724,10 @@ fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retr
             let pause = Arc::new(WritePause::default());
             let s = Arc::new(Session::new(
                 "test".into(),
-                protocol.into(),
                 op.clone().layer(PauseWrites(pause.clone())),
                 false,
             ));
-            p.sessions.lock().unwrap().insert(s.id.clone(), s.clone());
+            install_session(&p, s.id.clone(), s.clone());
             let dir = tempfile::tempdir().unwrap();
             let local = dir.path().join("source");
             let chunk = if append_only {
@@ -1730,8 +1738,8 @@ fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retr
             let payload = vec![42u8; chunk * 3];
             std::fs::write(&local, &payload).unwrap();
             let mut request = json!({
-                "providerId": format!("{PLUGIN_ID}.{protocol}.files"),
-                "connectionId": "test", "uri": format!("{protocol}:/target"),
+                "providerId": format!("{PLUGIN_ID}.ftp.files"),
+                "connectionId": "test", "uri": format!("opendal:/target"),
                 "localPath": local, "overwrite": true,
                 "timeoutMs": if cancel { 5000 } else { 500 },
             });
@@ -1743,7 +1751,7 @@ fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retr
             while !pause.entered.load(Ordering::SeqCst) {
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "{protocol}: write was not reached"
+                    "write was not reached"
                 );
                 std::thread::sleep(Duration::from_millis(1));
             }
@@ -1772,8 +1780,8 @@ fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retr
             );
             assert!(status["bytesTransferred"].as_u64().unwrap() > 0);
             assert!(status["bytesTransferred"].as_u64().unwrap() < payload.len() as u64);
-            assert_eq!(pause.closed.load(Ordering::SeqCst), protocol == "ftp");
-            assert_eq!(pause.aborted.load(Ordering::SeqCst), protocol != "ftp");
+            assert_eq!(pause.closed.load(Ordering::SeqCst), false);
+            assert_eq!(pause.aborted.load(Ordering::SeqCst), true);
             assert_eq!(p.transfers.global.available_permits(), 8);
             assert_eq!(s.permits.available_permits(), 2);
             p.runtime.block_on(async {
@@ -1820,18 +1828,19 @@ fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retr
 fn partial_directory_rename_reports_recovery_and_keeps_source() {
     let (p, s) = memory(false);
     p.runtime.block_on(async {
-        s.operator.create_dir("from/").await.unwrap();
-        s.operator.write("from/file", "content").await.unwrap();
+        s.operator().create_dir("from/").await.unwrap();
+        s.operator().write("from/file", "content").await.unwrap();
     });
     let faulty = Arc::new(Session::new(
-        "test".into(), s.operator.clone().layer(DenyDelete),
+        "test".into(),
+        s.operator().clone().layer(DenyDelete),
         false,
     ));
-    p.sessions.lock().unwrap().insert("test".into(), faulty);
+    install_session(&p, "test".into(), faulty);
     let e = call(
         &p,
         "filesystem/rename",
-        json!({"sourceUri": "opendal:from", "targetUri": "opendal:to"}),
+        json!({"sourceUri": "opendal:/from", "targetUri": "opendal:/to"}),
     )
     .unwrap_err();
     assert_eq!(e.data.as_ref().unwrap()["code"], "partial_rename");
@@ -1841,7 +1850,10 @@ fn partial_directory_rename_reports_recovery_and_keeps_source() {
     );
     for path in ["from/file", "to/file"] {
         assert_eq!(
-            p.runtime.block_on(s.operator.read(path)).unwrap().to_vec(),
+            p.runtime
+                .block_on(s.operator().read(path))
+                .unwrap()
+                .to_vec(),
             b"content"
         );
     }
@@ -1851,17 +1863,18 @@ fn partial_directory_rename_reports_recovery_and_keeps_source() {
 fn upload_cleanup_failure_never_reports_completion_or_cancellation() {
     let (p, s) = memory(false);
     let faulty = Arc::new(Session::new(
-        "test".into(), s.operator.clone().layer(DenyDelete),
+        "test".into(),
+        s.operator().clone().layer(DenyDelete),
         false,
     ));
-    p.sessions.lock().unwrap().insert("test".into(), faulty);
+    install_session(&p, "test".into(), faulty);
     let dir = tempfile::tempdir().unwrap();
     let local = dir.path().join("source");
     std::fs::write(&local, b"content").unwrap();
     let task = call(
         &p,
         "filesystem/transfer/startUpload",
-        json!({"uri": "opendal:target", "localPath": local}),
+        json!({"uri": "opendal:/target", "localPath": local}),
     )
     .unwrap();
     let status = wait_task(&p, task["transferId"].as_str().unwrap());
@@ -1884,15 +1897,16 @@ fn transfer_limits_are_global_eight_and_per_connection_two() {
         let op = Operator::new(services::Memory::default()).unwrap().finish();
         p.runtime.block_on(op.write("source", "content")).unwrap();
         let s = Arc::new(Session::new(
-            id.clone(), op.layer(SlowRead(Arc::new(AtomicBool::new(false)))),
+            id.clone(),
+            op.layer(SlowRead(Arc::new(AtomicBool::new(false)))),
             false,
         ));
-        p.sessions.lock().unwrap().insert(id.clone(), s.clone());
+        install_session(&p, id.clone(), s.clone());
         sessions.push(s);
         for index in 0..3 {
             let mut params = params();
             params["connectionId"] = json!(id);
-            params["uri"] = json!("opendal:source");
+            params["uri"] = json!("opendal:/source");
             params["localPath"] = json!(temp.path().join(format!("{connection}-{index}")));
             let start = p
                 .invoke("filesystem/transfer/startDownload", params.clone(), None)
@@ -1953,13 +1967,14 @@ fn running_download_cancellation_and_timeout_remove_temporary_files() {
         p.runtime.block_on(op.write("source", "abc")).unwrap();
         let entered = Arc::new(AtomicBool::new(false));
         let s = Arc::new(Session::new(
-            "test".into(), op.layer(SlowRead(entered.clone())),
+            "test".into(),
+            op.layer(SlowRead(entered.clone())),
             false,
         ));
-        p.sessions.lock().unwrap().insert(s.id.clone(), s);
+        install_session(&p, s.id.clone(), s);
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join("destination");
-        let start = call(&p, "filesystem/transfer/startDownload", json!({"uri": "opendal:source", "localPath": target, "timeoutMs": if cancel { 5000 } else { 100 }})).unwrap();
+        let start = call(&p, "filesystem/transfer/startDownload", json!({"uri": "opendal:/source", "localPath": target, "timeoutMs": if cancel { 5000 } else { 100 }})).unwrap();
         let id = start["transferId"].as_str().unwrap();
         let wait = std::time::Instant::now();
         while !entered.load(Ordering::SeqCst) {
@@ -2007,9 +2022,9 @@ fn live_native_listing_regression() {
                 op.write(&format!("{dir}{file}"), "x").await.unwrap();
             }
             let mut names = Vec::new();
-            let session = Session::new("live".into(), protocol.into(), op.clone(), false);
+            let session = Session::new("live".into(), op.clone(), false);
             let mut params =
-                json!({"uri": uri::uri(protocol, dir.trim_end_matches('/')), "limit": 1});
+                json!({"uri": uri::uri("opendal", dir.trim_end_matches('/')), "limit": 1});
             for _ in 0..6 {
                 let page = operations::dispatch(&session, "filesystem/list", &params)
                     .await
@@ -2035,4 +2050,26 @@ fn live_native_listing_regression() {
             );
         }
     });
+}
+
+#[test]
+fn operator_session_keeps_capabilities_stable_and_paths_root_relative() {
+    use opendal::raw::Access;
+    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let session = Session::new("snapshot".into(), op.clone(), false);
+    op.inner().info().update_full_capability(|mut c| {
+        c.read = false;
+        c
+    });
+    assert!(session.raw_capability().read);
+    assert_eq!(session.capabilities()["read"], true);
+    assert_eq!(session.capabilities()["rootUri"], "opendal:/");
+    assert_eq!(
+        session.path(&session.uri("folder/a b.txt")).unwrap(),
+        "folder/a b.txt"
+    );
+    assert!(session.path("ftp:/folder/file").is_err());
+    assert!(session.path("opendal:/../escape").is_err());
+    session.cancellation().cancel();
+    assert_eq!(code(session.require("read").unwrap_err()), "not_connected");
 }

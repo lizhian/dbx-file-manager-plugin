@@ -11,7 +11,7 @@ mod workbench;
 use config::ConnectionRequest;
 pub use config::PLUGIN_ID;
 use dbx_plugin_sdk::{PluginEmitter, PluginError, PluginHandler, RequestContext};
-use error::{error, recovery, remote, text, Result};
+use error::{error, recovery, text, Result};
 use serde_json::{json, Value};
 use session::{Activity, Session};
 use std::{
@@ -102,7 +102,7 @@ impl Plugin {
                 .map(|(_, s)| s)
                 .collect();
             for s in &sessions {
-                s.closed.cancel();
+                s.cancellation().cancel();
             }
             self.transfers.shutdown().await;
             for s in sessions {
@@ -113,17 +113,24 @@ impl Plugin {
     }
 
     fn cached_session(&self, id: &str, provider: &str) -> Result<Option<(Arc<Session>, Activity)>> {
-        let sessions = self.sessions.lock().unwrap();
-        let Some(s) = sessions.get(id) else {
+        let descriptors = self.descriptors.lock().unwrap();
+        if !descriptors.contains_key(id) {
             return Ok(None);
-        };
-        if s.provider_id != provider {
+        }
+        if !descriptors
+            .get(id)
+            .is_some_and(|r| format!("{}.files", r.provider.id) == provider)
+        {
             return Err(error(
                 "configuration",
                 "Filesystem provider does not match this connection",
             ));
         }
-        if s.closed.is_cancelled() || s.idle() {
+        let sessions = self.sessions.lock().unwrap();
+        let Some(s) = sessions.get(id) else {
+            return Ok(None);
+        };
+        if s.cancellation().is_cancelled() || s.idle() {
             return Ok(None);
         }
         Ok(Some((s.clone(), s.activity())))
@@ -166,7 +173,7 @@ impl Plugin {
     async fn retire(&self, id: &str) {
         let session = self.sessions.lock().unwrap().remove(id);
         if let Some(s) = session {
-            s.closed.cancel();
+            s.cancellation().cancel();
             s.wait_drained().await;
             let _gate = s.gate.write().await;
             s.cursors.lock().unwrap().clear();
@@ -189,30 +196,13 @@ impl Plugin {
             .filter(|v| *v > 0)
             .unwrap_or(30)
             .clamp(1, 300);
-        let verified = if op.info().full_capability().list {
-            match tokio::time::timeout(Duration::from_secs(timeout), op.check())
-                .await
-                .map_err(|_| error("timeout", "Connection check timed out"))?
-            {
-                Ok(()) => true,
-                Err(e)
-                    if e.kind() == opendal::ErrorKind::Unsupported
-                        && request.protocol()? == "opendal" =>
-                {
-                    false
-                }
-                Err(e) => return Err(remote(e)),
-            }
-        } else {
-            false
-        };
         let mut session = Session::new(
             request.connection.id.clone(),
             op,
             request.connection.read_only,
         );
+        session.verify(Duration::from_secs(timeout)).await?;
         session.fingerprint = request.fingerprint;
-        session.verified = verified;
         session.operation_timeout = request.query_timeout()?;
         session.idle_timeout = request.idle_timeout()?;
         session.generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -249,16 +239,13 @@ impl Plugin {
             return Err(error("unavailable", "Sidecar is shutting down"));
         }
         if method == "chooseLocal" {
-            operations::require(
-                &s,
-                if error::flag(&params, "upload", true)? {
-                    "upload"
-                } else {
-                    "download"
-                },
-            )?;
+            s.require(if error::flag(&params, "upload", true)? {
+                "upload"
+            } else {
+                "download"
+            })?;
             return tokio::select! {
-                _ = s.closed.cancelled() => Err(error("not_connected", "Connection closed")),
+                _ = s.cancellation().cancelled() => Err(error("not_connected", "Connection closed")),
                 result = self.workbench.choose(&s, &params) => result,
             };
         }
@@ -268,8 +255,8 @@ impl Plugin {
             p["localPath"] = json!(path);
             // The path is selected by a native dialog, never supplied by iframe JavaScript.
             if upload {
-                let path = uri::path(text(&p, "uri")?, s.storage_scheme())?;
-                operations::destination(&s.operator, &path, error::flag(&p, "overwrite", false)?)
+                let path = s.path(text(&p, "uri")?)?;
+                operations::destination(&s.operator(), &path, error::flag(&p, "overwrite", false)?)
                     .await?;
             }
             return self.transfers.start(s, upload, &p, emitter);
@@ -320,7 +307,7 @@ impl Plugin {
             };
             let timeout = s.operation_timeout.unwrap_or(Duration::from_secs(120));
             return tokio::select! {
-                _ = s.closed.cancelled() => Err(error("not_connected", "Connection closed")),
+                _ = s.cancellation().cancelled() => Err(error("not_connected", "Connection closed")),
                 result = tokio::time::timeout(timeout, operation) => result.map_err(|_| error("timeout", "Remote operation timed out; inspect the file before retrying"))?,
             };
         }
@@ -368,52 +355,7 @@ impl Plugin {
             | "filesystem/rename"
             | "filesystem/copy" => {
                 let (s, _activity) = self.session(&params).await?;
-                let mutation = matches!(
-                    method,
-                    "filesystem/write"
-                        | "filesystem/createDirectory"
-                        | "filesystem/delete"
-                        | "filesystem/rename"
-                        | "filesystem/copy"
-                );
-                if mutation {
-                    s.writable()?;
-                }
-                let operation = async {
-                    let _gate = s.gate.read().await;
-                    s.available()?;
-                    let _connection = s
-                        .permits
-                        .acquire()
-                        .await
-                        .map_err(|_| error("unavailable", "Connection slots unavailable"))?;
-                    let _global = self
-                        .transfers
-                        .global
-                        .acquire()
-                        .await
-                        .map_err(|_| error("unavailable", "Operation slots unavailable"))?;
-                    operations::dispatch(&s, method, &params).await
-                };
-                let deadline = async {
-                    if let Some(timeout) = s.operation_timeout {
-                        tokio::time::sleep(timeout).await;
-                    } else {
-                        std::future::pending::<()>().await;
-                    }
-                };
-                let result = tokio::select! {
-                    biased;
-                    _ = s.closed.cancelled() => Err(error("not_connected", "Connection generation was closed")),
-                    _ = deadline => Err(error("timeout", "Remote operation timed out")),
-                    result = operation => result,
-                };
-                result.map_err(|e| {
-                    if mutation && e.data.as_ref().is_some_and(|d| d["code"] == "timeout" || d["code"] == "not_connected") {
-                        recovery(e, json!({"action": "inspect_both_locations", "sourceUri": params.get("sourceUri"),
-                            "targetUri": params.get("targetUri").or(params.get("uri")), "destinationMayExist": true, "sourceMayExist": true}))
-                    } else { e }
-                })
+                s.execute(method, &params, &self.transfers.global).await
             }
             _ => {
                 let mut e = PluginError::method_not_found(method);
@@ -425,7 +367,6 @@ impl Plugin {
 
     async fn connection(&self, method: &str, params: Value) -> Result<Value> {
         let request = ConnectionRequest::parse(params)?;
-        let protocol = request.protocol()?.to_string();
         let id = &request.connection.id;
         let _lifecycle = self.lifecycle.lock().await;
         if self.stopping.load(Ordering::SeqCst) {
@@ -438,12 +379,6 @@ impl Plugin {
                 .unwrap()
                 .get(id)
                 .is_some_and(|r| r.provider.id != request.provider.id)
-                || self
-                    .sessions
-                    .lock()
-                    .unwrap()
-                    .get(id)
-                    .is_some_and(|s| s.storage_scheme() != protocol)
             {
                 return Err(error("configuration", "Connection provider mismatch"));
             }
@@ -454,7 +389,10 @@ impl Plugin {
         if method == "connection/connect" {
             let current = self.sessions.lock().unwrap().get(id).cloned();
             if let Some(s) = current {
-                if s.fingerprint == request.fingerprint && !s.closed.is_cancelled() && !s.idle() {
+                if s.fingerprint == request.fingerprint
+                    && !s.cancellation().is_cancelled()
+                    && !s.idle()
+                {
                     *s.last_used.lock().unwrap() = std::time::Instant::now();
                     return Ok(connection_result(&s));
                 }
@@ -488,9 +426,6 @@ fn connection_result(session: &Session) -> Value {
     if !session.verified {
         result["warnings"] = json!(["配置已构建；此服务不能通过目录列表探测，尚未验证远端可访问性。请使用已知路径验证读取。"]);
     }
-    if session.storage_scheme() == "ssh" {
-        result["warnings"] = json!(["SFTP uses system OpenSSH and the Accept known-host strategy: new host keys are trusted on first use. Independently verify host keys before production use. Password authentication is unsupported; private_key is an absolute key-file path."]);
-    }
     result
 }
 
@@ -498,7 +433,7 @@ fn evict_idle(sessions: &Mutex<HashMap<String, Arc<Session>>>) {
     let mut sessions = sessions.lock().unwrap();
     sessions.retain(|_, s| {
         if s.idle() {
-            s.closed.cancel();
+            s.cancellation().cancel();
             s.cursors.lock().unwrap().clear();
             false
         } else {

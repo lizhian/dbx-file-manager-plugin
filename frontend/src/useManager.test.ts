@@ -14,7 +14,7 @@ async function setup(connectionId = 'a', ask = vi.fn().mockResolvedValue(null), 
     if (custom !== undefined) return custom;
     let value: any = {};
     if (method.endsWith('/capabilities')) value = { read: true, write: true, list: true, mkdir: true, rename: true, delete: true, upload: true, download: true };
-    if (method.endsWith('/list')) value = { entries: [{ name: 'edit.txt', kind: 'file', uri: 'ftp:/edit.txt' }], transfers: [] };
+    if (method.endsWith('/list')) value = { entries: [{ name: 'edit.txt', kind: 'file', uri: 'opendal:/edit.txt' }], transfers: [] };
     if (method.endsWith('/preview')) value = { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes) };
     if (method.endsWith('/previewChunk')) value = { dataBase64: encode(bytes), nextOffset: bytes.length };
     return { ok: true, value };
@@ -61,14 +61,14 @@ describe('file manager workflows', () => {
     expect(invoke.mock.calls.some(([method]) => /\/(stageText|saveText)$/.test(method))).toBe(false);
   });
   it('expands files inline, paginates children and preserves expansion on refresh', async () => {
-    const directory = { name: 'folder', kind: 'directory', uri: 'ftp:/folder/' };
-    const file = { name: 'child.txt', kind: 'file', uri: 'ftp:/folder/child.txt' };
+    const directory = { name: 'folder', kind: 'directory', uri: 'opendal:/folder/' };
+    const file = { name: 'child.txt', kind: 'file', uri: 'opendal:/folder/child.txt' };
     const { manager: m } = await setup('a', undefined, (method, p) => {
       if (!method.endsWith('/list')) return;
-      return { ok: true, value: p.uri === 'ftp:/' ? { entries: [directory] } : p.cursor ? { entries: [{ ...file, name: 'next.txt', uri: 'ftp:/folder/next.txt' }] } : { entries: [file], nextCursor: 'page2' } };
+      return { ok: true, value: p.uri === 'opendal:/' ? { entries: [directory] } : p.cursor ? { entries: [{ ...file, name: 'next.txt', uri: 'opendal:/folder/next.txt' }] } : { entries: [file], nextCursor: 'page2' } };
     });
     await m.toggleTree(directory.uri);
-    expect(m.path.value).toBe('ftp:/');
+    expect(m.path.value).toBe('opendal:/');
     expect(m.tableRows.value.map(r => [r.entry.name, r.depth, !!r.more])).toEqual([['folder', 0, false], ['child.txt', 1, false], ['folder', 1, true]]);
     await m.toggleTree(directory.uri, true);
     expect(m.tableRows.value.map(r => r.entry.name)).toEqual(['folder', 'child.txt', 'next.txt']);
@@ -79,17 +79,17 @@ describe('file manager workflows', () => {
   it('renames and copies an expanded child in its own parent directory', async () => {
     const ask = vi.fn().mockResolvedValue('new.txt');
     const { manager: m, invoke } = await setup('a', ask);
-    const child = { name: 'old.txt', kind: 'file', uri: 'ftp:/folder/old.txt' };
+    const child = { name: 'old.txt', kind: 'file', uri: 'opendal:/folder/old.txt' };
     m.selected.value = child; await m.rename();
-    expect(invoke.mock.calls.find(([method]) => method.endsWith('/rename'))?.[1].targetUri).toBe('ftp:/folder/new.txt');
+    expect(invoke.mock.calls.find(([method]) => method.endsWith('/rename'))?.[1].targetUri).toBe('opendal:/folder/new.txt');
     m.selected.value = child; m.capabilities.value.copy = true; await m.copy();
-    expect(invoke.mock.calls.find(([method]) => method.endsWith('/copy'))?.[1].targetUri).toBe('ftp:/folder/new.txt');
+    expect(invoke.mock.calls.find(([method]) => method.endsWith('/copy'))?.[1].targetUri).toBe('opendal:/folder/new.txt');
   });
   it('loads a saved connection and navigates directories', async () => {
     const { manager: m, invoke } = await setup();
     expect(m.rows.value[0].name).toBe('edit.txt');
-    await m.navigate('ftp:/folder/');
-    expect(m.path.value).toBe('ftp:/folder/');
+    await m.navigate('opendal:/folder/');
+    expect(m.path.value).toBe('opendal:/folder/');
     expect(invoke.mock.calls.every(([, p]) => p.connectionId === 'a')).toBe(true);
   });
   it('previews text and chunks a 2 MiB edit beneath the host request limit', async () => {
@@ -106,8 +106,8 @@ describe('file manager workflows', () => {
   it('keeps the draft when navigation confirmation is cancelled', async () => {
     const { manager: m, ask } = await setup();
     await m.open(m.rows.value[0]); m.content.value = 'draft';
-    await m.navigate('ftp:/other/');
-    expect(ask).toHaveBeenCalled(); expect(m.path.value).toBe('ftp:/'); expect(m.content.value).toBe('draft');
+    await m.navigate('opendal:/other/');
+    expect(ask).toHaveBeenCalled(); expect(m.path.value).toBe('opendal:/'); expect(m.content.value).toBe('draft');
   });
   it('never silently overwrites a conflict', async () => {
     const { manager: m, invoke, ask } = await setup('a', vi.fn().mockResolvedValue(null), method => method.endsWith('/saveText') ? { ok: false, error: { message: 'changed', details: { code: 'conflict' } } } : undefined);

@@ -9,7 +9,6 @@ pub struct Service {
     pub scheme: String,
     pub status: String,
     pub reason: String,
-    pub reference: String,
 }
 #[derive(Deserialize)]
 struct Catalog {

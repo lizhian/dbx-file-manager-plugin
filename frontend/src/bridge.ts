@@ -10,7 +10,7 @@ export class RpcError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 export function client(context: Context) {
-  if (!context.connectionId || !context.providerId || !context.connectionType) throw new Error('请从宿主连接列表打开文件连接');
+  if (!context.connectionId || !context.providerId) throw new Error('请从宿主连接列表打开文件连接');
   const binding = { connectionId: context.connectionId, providerId: `${context.providerId}.files` };
   return async <T = any>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
     if (!window.dbxPlugin) throw new Error('请在 DBX 中打开此页面');

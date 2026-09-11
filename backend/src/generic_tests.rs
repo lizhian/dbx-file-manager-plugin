@@ -109,8 +109,8 @@ fn generic_memory_and_fs_use_shared_file_operations() {
             "verified"
         );
         assert_eq!(
-            call(&p, "workbench/capabilities", json!({}))["service"],
-            service
+            call(&p, "workbench/capabilities", json!({}))["rootUri"],
+            "opendal:/"
         );
         call(
             &p,
@@ -170,16 +170,17 @@ struct ReadOnly;
 #[test]
 fn generic_read_only_errors_are_distinct_from_missing_capabilities() {
     let session = session::Session::new(
-        "read-only-test".into(), generic::build("memory", "").unwrap(),
+        "read-only-test".into(),
+        generic::build("memory", "").unwrap(),
         true,
     );
     for capability in [
         "write", "mkdir", "delete", "copy", "rename", "upload", "edit",
     ] {
-        let err = operations::require(&session, capability).unwrap_err();
+        let err = session.require(capability).unwrap_err();
         assert_eq!(err.data.unwrap()["code"], "read_only");
     }
-    operations::require(&session, "read").unwrap();
+    session.require("read").unwrap();
 }
 #[derive(Debug)]
 struct ReadOnlyAccess<A: Access> {

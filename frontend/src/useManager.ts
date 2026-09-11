@@ -26,7 +26,6 @@ export function useManager(ask: Ask) {
   const transfers = ref<Transfer[]>([]);
   const localTokens = ref<Record<string, string>>({});
   const preview = shallowRef<{ token: string; entry: Entry; kind: string; url?: string; truncated?: boolean; byteLimited?: boolean; editable?: boolean }>();
-  const generic = ref(false);
   const editTarget = ref<string>();
   const content = ref('');
   const original = ref('');
@@ -62,7 +61,7 @@ export function useManager(ask: Ask) {
     return e instanceof RpcError ? codes[e.code] || `${e.message} (${e.code})` : e instanceof Error ? e.message : String(e);
   }
   async function unsupported(operation: string) {
-    await ask({ title: '操作不支持', message: `${capabilities.value.service || '当前服务'}：不支持${operation}，或无法满足该操作所需的文件管理保证。`, confirm: '知道了' });
+    await ask({ title: '操作不支持', message: `当前连接：不支持${operation}，或无法满足该操作所需的文件管理保证。`, confirm: '知道了' });
   }
   async function requireCapability(capability: string, operation: string) {
     if (capabilities.value[capability]) return true;
@@ -90,7 +89,7 @@ export function useManager(ask: Ask) {
   async function load(target: string, more = false) {
     if (capabilities.value.list === false) {
       entries.value = []; cursor.value = undefined;
-      path.value = target; inputPath.value = generic.value ? decodeURIComponent(target.slice(root.value.length - 1)) : target;
+      path.value = target; inputPath.value = decodeURIComponent(target.slice(root.value.length - 1));
       return;
     }
     const g = generation;
@@ -98,7 +97,7 @@ export function useManager(ask: Ask) {
     if (g !== generation) return;
     entries.value = more ? [...entries.value, ...response.entries] : response.entries;
     cursor.value = response.nextCursor || undefined;
-    path.value = target; inputPath.value = generic.value ? decodeURIComponent(target.slice(root.value.length - 1)) : target;
+    path.value = target; inputPath.value = decodeURIComponent(target.slice(root.value.length - 1));
     tree.value[target] = entries.value;
     if (!more) for (const uri of [...expanded.value]) {
       if (uri === target) continue;
@@ -320,9 +319,8 @@ export function useManager(ask: Ask) {
     release(); generation++; clearTimeout(timer);
     entries.value = []; tree.value = {}; expanded.value = new Set(); treeCursors.value = {}; localTokens.value = {}; transfers.value = []; selected.value = undefined;
     capabilities.value = {}; busy.value = false; filter.value = '';
-    generic.value = context.connectionType === 'opendal';
     try { api = client(context); } catch (e) { error.value = message(e); return; }
-    root.value = `${context.connectionType}:/`; path.value = root.value; inputPath.value = generic.value ? '/' : path.value;
+    root.value = 'opendal:/'; path.value = root.value; inputPath.value = '/';
     await refresh();
     const g = generation;
     const tick = async () => {
@@ -333,7 +331,7 @@ export function useManager(ask: Ask) {
     timer = setTimeout(tick, 1500);
   }
   onBeforeUnmount(() => { disposed = true; generation++; clearTimeout(timer); release(); });
-  return { path, inputPath, root, entries, cursor, selected, capabilities, busy, error, status, filter, order, tree, expanded, generic, accessPath,
+  return { path, inputPath, root, entries, cursor, selected, capabilities, busy, error, status, filter, order, tree, expanded, accessPath,
     transfers, localTokens, openLocal, preview, content, dirty, rows, tableRows, initialize, navigate, refresh, more, toggleTree, open, closePreview, save, mkdir, mkdirAt, rename, remove, copy, copyTo, editTarget, transfer, cancel,
     up: () => navigate(parentUri(path.value)), terminal, listDirectories };
 }

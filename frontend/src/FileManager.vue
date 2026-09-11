@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, FolderPlus, Upload, Download, FilePenLine, Trash2, File, FileText, Image, Folder, FolderOpen, Eye, Copy, X, Save, CheckCircle2, CircleAlert } from 'lucide-vue-next';
 import { formatSize, parentUri, type Context, type Entry } from './bridge';
 import { useManager, type Question } from './useManager';
@@ -16,7 +16,7 @@ async function ask(q: Question) {
 }
 function finish(value: string | null) { dialog.value?.close(); resolve?.(value); resolve = undefined; question.value = undefined; }
 const m = useManager(ask);
-const { path, root, selected, capabilities, busy, error, status, expanded, transfers, preview, content, dirty, tableRows, cursor, generic, inputPath } = m;
+const { path, root, selected, capabilities, busy, error, status, expanded, transfers, preview, content, dirty, tableRows, cursor, inputPath } = m;
 const downloadsOpen = ref(false), menu = ref<{ x: number; y: number }>();
 const editing = ref<Entry>(); const editFolder = ref(''); const editName = ref('');
 const folderAction = ref<'mkdir' | 'upload'>();
@@ -26,7 +26,6 @@ function startFolderAction(action: 'mkdir' | 'upload') { folderAction.value = ac
 function cancelFolderAction() { folderAction.value = undefined; }
 async function finishFolderAction() { const action = folderAction.value; const target = editFolder.value; cancelFolderAction(); if (action === 'mkdir') { selected.value = undefined; await m.mkdirAt(target, editName.value.trim()); } else await m.transfer(true, target); }
 async function copyPath(entry: Entry) { const value = decodeURIComponent(entry.uri.replace(/^[^:]+:/, '')); try { await navigator.clipboard.writeText(value); status.value = '路径已复制'; } catch { await ask({ title: '复制路径失败', message: value, confirm: '知道了' }); } }
-const displayPath = computed(() => { try { return decodeURIComponent(path.value.replace(/^[^:]+:/, '')) || '/'; } catch { return path.value; } });
 let clickTimer: ReturnType<typeof setTimeout> | undefined;
 function cancelClick() { clearTimeout(clickTimer); }
 function entryClick(entry: Entry, event: MouseEvent) {
@@ -60,15 +59,14 @@ onBeforeUnmount(() => { cancelClick(); resolve?.(null); });
     <header class="relative z-20 flex min-h-12 flex-wrap items-center gap-1 border-b border-base-300 px-3 py-2">
       <button class="btn btn-sm btn-square btn-ghost" title="上一级" aria-label="上一级" :disabled="busy || path === root" @click="m.up"><ChevronLeft :size="17" /></button>
       <button class="btn btn-sm btn-square btn-ghost" title="刷新" aria-label="刷新" :disabled="busy" @click="m.refresh"><RefreshCw :size="18" :class="busy ? 'animate-spin' : ''" /></button>
-      <span v-if="!generic" class="min-w-0 flex-1 truncate px-2 text-sm" :title="displayPath" aria-label="当前路径">{{ displayPath }}</span>
-      <form v-if="generic" class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="m.accessPath('directory')">
+      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="m.accessPath('directory')">
         <input v-model="inputPath" class="input input-sm min-w-0 w-full focus:outline-none focus:ring-0" aria-label="存储路径" :readonly="busy" @keydown.enter.prevent="m.accessPath('directory')" />
         <button type="button" class="btn btn-sm btn-square btn-ghost" title="进入目录" aria-label="进入目录" :disabled="busy" @click="m.accessPath('directory')"><FolderOpen :size="16" /></button>
       </form>
       <span v-if="capabilities.readOnly" class="px-2 text-xs text-warning">只读</span>
       <div class="ml-auto flex flex-wrap justify-end gap-1 max-sm:w-full">
-        <button class="btn btn-sm btn-outline border-base-300" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.mkdir)" @click="startFolderAction('mkdir')"><FolderPlus :size="16" />新建文件夹</button>
-        <button class="btn btn-sm btn-outline border-base-300" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.upload)" @click="startFolderAction('upload')"><Upload :size="16" />上传</button>
+        <button class="btn btn-sm btn-outline border-base-300" :disabled="busy || capabilities.readOnly || !capabilities.mkdir" @click="startFolderAction('mkdir')"><FolderPlus :size="16" />新建文件夹</button>
+        <button class="btn btn-sm btn-outline border-base-300" :disabled="busy || capabilities.readOnly || !capabilities.upload" @click="startFolderAction('upload')"><Upload :size="16" />上传</button>
         <button class="btn btn-sm btn-outline border-base-300" :class="downloadsOpen ? 'bg-base-200' : ''" :aria-expanded="downloadsOpen" aria-controls="transfer-list" @click.stop="downloadsOpen = !downloadsOpen"><Download :size="16" />传输列表</button>
       </div>
       <section v-if="downloadsOpen" id="transfer-list" class="absolute right-2 top-full z-30 w-[520px] max-w-[calc(100vw-16px)] rounded-lg border border-base-300 bg-base-100 shadow-lg" aria-label="传输列表" @click.stop>
@@ -104,10 +102,10 @@ onBeforeUnmount(() => { cancelClick(); resolve?.(null); });
               <td class="hidden text-right text-xs tabular-nums text-base-content/60 sm:table-cell">{{ row.more ? '' : row.entry.kind === 'file' ? formatSize(row.entry.size) : '—' }}</td>
               <td class="hidden truncate text-xs text-base-content/60 lg:table-cell">{{ row.more ? '' : row.entry.modifiedAt ? new Date(row.entry.modifiedAt).toLocaleString('zh-CN') : '—' }}</td>
               <td class="text-right"><div v-if="!row.more" class="flex justify-end">
-                <button v-if="row.entry.kind === 'file'" class="btn btn-xs btn-square btn-ghost" title="下载" aria-label="下载" :disabled="busy || (!generic && !capabilities.download)" @click.stop="action(row.entry, 'download')"><Download :size="16" /></button>
+                <button v-if="row.entry.kind === 'file'" class="btn btn-xs btn-square btn-ghost" title="下载" aria-label="下载" :disabled="busy || !capabilities.download" @click.stop="action(row.entry, 'download')"><Download :size="16" /></button>
                 <button class="btn btn-xs btn-square btn-ghost" title="复制路径" aria-label="复制路径" :disabled="busy" @click.stop="copyPath(row.entry)"><Copy :size="16" /></button>
-                <button class="btn btn-xs btn-square btn-ghost" title="编辑" aria-label="编辑" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.rename)" @click.stop="startEdit(row.entry)"><FilePenLine :size="16" /></button>
-                <button class="btn btn-xs btn-square btn-ghost text-error" title="删除" aria-label="删除" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.delete)" @click.stop="action(row.entry, 'delete')"><Trash2 :size="16" /></button>
+                <button class="btn btn-xs btn-square btn-ghost" title="编辑" aria-label="编辑" :disabled="busy || capabilities.readOnly || !capabilities.rename" @click.stop="startEdit(row.entry)"><FilePenLine :size="16" /></button>
+                <button class="btn btn-xs btn-square btn-ghost text-error" title="删除" aria-label="删除" :disabled="busy || capabilities.readOnly || !capabilities.delete" @click.stop="action(row.entry, 'delete')"><Trash2 :size="16" /></button>
               </div></td>
             </tr>
           </tbody>
@@ -124,9 +122,9 @@ onBeforeUnmount(() => { cancelClick(); resolve?.(null); });
     <div v-if="status" role="status" class="absolute bottom-3 left-3 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs shadow">{{ status }}</div>
     <div v-if="menu && selected" class="fixed z-40 w-44 rounded border border-base-300 bg-base-100 p-1 shadow-lg" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" role="menu" @click.stop>
       <button class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy" @click="m.open(selected); menu = undefined">{{ selected.kind === 'directory' ? '进入文件夹' : '预览' }}</button>
-      <button v-if="selected.kind === 'file'" class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy || (!generic && !capabilities.download)" @click="action(selected, 'download')">下载</button>
+      <button v-if="selected.kind === 'file'" class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy || !capabilities.download" @click="action(selected, 'download')">下载</button>
       <button class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy" @click="copyPath(selected); menu = undefined">复制路径</button>
-      <button class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.rename)" @click="startEdit(selected)">编辑</button><button class="btn btn-sm btn-ghost w-full justify-start text-error" role="menuitem" :disabled="busy || capabilities.readOnly || (!generic && !capabilities.delete)" @click="action(selected, 'delete')">删除</button>
+      <button class="btn btn-sm btn-ghost w-full justify-start" role="menuitem" :disabled="busy || capabilities.readOnly || !capabilities.rename" @click="startEdit(selected)">编辑</button><button class="btn btn-sm btn-ghost w-full justify-start text-error" role="menuitem" :disabled="busy || capabilities.readOnly || !capabilities.delete" @click="action(selected, 'delete')">删除</button>
     </div>
     <dialog v-if="editing" open class="modal"><div class="modal-box flex h-auto max-h-[85vh] max-w-2xl flex-col gap-3"><h2 class="flex shrink-0 items-center gap-3 text-base font-semibold"><span>{{ editing.kind === "file" ? "文件夹树" : "重命名" }}</span><span v-if="editing.kind === 'file'" class="min-w-0 truncate text-sm font-normal text-base-content/60" :title="editFolder">{{ editFolder.replace(root, '') || '/' }}</span></h2><FolderPicker v-if="editing.kind === 'file'" :key="editing.uri" v-model="editFolder" :root="root" :load="m.listDirectories" /><input v-model="editName" class="input input-sm w-full shrink-0 focus:outline-none focus:ring-0" aria-label="文件名称" placeholder="文件名称" /><div class="modal-action mt-0 shrink-0"><button class="btn btn-sm" @click="cancelEdit">取消</button><button v-if="editing.kind === 'file'" class="btn btn-sm" :disabled="!editName.trim()" @click="m.copyTo(editFolder, false, editName.trim()); cancelEdit()">复制</button><button v-if="editFolder !== parentUri(editing.uri) && editing.kind === 'file'" class="btn btn-sm" :disabled="!editName.trim()" @click="m.copyTo(editFolder, true, editName.trim()); cancelEdit()">移动</button><button v-if="editFolder === parentUri(editing.uri)" class="btn btn-sm" :disabled="!editName.trim()" @click="m.rename(editName.trim()); cancelEdit()">重命名</button></div></div></dialog>
     <dialog ref="dialog" class="modal" @cancel.prevent="finish(null)"><form class="modal-box max-w-sm rounded-lg" @submit.prevent="finish(answer)">

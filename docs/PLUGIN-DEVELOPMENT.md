@@ -79,3 +79,14 @@ no_proxy=localhost,127.0.0.1,::1 NO_PROXY=localhost,127.0.0.1,::1 \
 - 预览/草稿保留在内存，30 分钟过期；不写磁盘。宿主关闭 Tab 无法拦截，关闭前需要保存。
 - 仅删除文件和空目录；目录重命名可能采用复制后删除，失败时需检查两端。支持同目录文件复制，不支持目录复制、递归上传下载、断点续传、图片编辑、Kerberos 或 HDFS HA。
 - FTP 明文；SFTP 依赖 OpenSSH，首次接受未知主机密钥，仅在可信环境使用。
+
+## 统一 Operator 会话（2026-09-11）
+
+连接入口负责校验宿主 provider 绑定并构建 OpenDAL Operator；会话不再保存协议、服务名或 provider ID。
+Session 集中保存 Operator、不可变原始能力快照，以及只读、代次、超时、并发和游标状态，提供统一能力判断、路径转换和文件操作执行入口。
+所有页面及文件 RPC 使用 `opendal:/` 导航根；实际存储根仍由配置写入 Operator，避免重复拼接。
+旧协议导航 URI 不再接受，既有连接配置与 provider ID 不变；传输记录仍携带经过入口校验的宿主 provider ID。
+页面统一展示路径输入框，根据能力禁用操作，不再按连接类型分支。
+
+连接创建同步检查远端；没有列表能力或检查返回 Unsupported 时，明确返回 `configuration_only`，不假称已验证。其他检查错误阻止发布会话。
+取消上传统一尝试 OpenDAL abort，仅 Unsupported 时尝试 close，再清理临时文件。

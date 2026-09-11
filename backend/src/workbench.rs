@@ -2,7 +2,6 @@ use crate::{
     error::{error, flag, remote, text, Result},
     operations,
     session::Session,
-    uri,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
@@ -65,11 +64,11 @@ fn image_mime(bytes: &[u8]) -> Option<&'static str> {
 }
 
 async fn bounded_read(s: &Session, path: &str, max: usize) -> Result<Vec<u8>> {
-    let metadata = operations::file_metadata(&s.operator, path).await?;
+    let metadata = operations::file_metadata(&s.operator(), path).await?;
     if metadata.is_some_and(|m| m.content_length() > max as u64) {
         return Err(error("too_large", "File exceeds the preview limit"));
     }
-    let mut reader = operations::reader(&s.operator, path)
+    let mut reader = operations::reader(&s.operator(), path)
         .await?
         .take(max as u64 + 1);
     let mut bytes = Vec::new();
@@ -84,8 +83,8 @@ async fn bounded_read(s: &Session, path: &str, max: usize) -> Result<Vec<u8>> {
 }
 
 async fn preview_read(s: &Session, path: &str) -> Result<(Vec<u8>, bool, bool)> {
-    let metadata = operations::file_metadata(&s.operator, path).await?;
-    let mut reader = operations::reader(&s.operator, path).await?;
+    let metadata = operations::file_metadata(&s.operator(), path).await?;
+    let mut reader = operations::reader(&s.operator(), path).await?;
     let mut bytes = Vec::new();
     let mut lines = 0;
     let mut line_end = None;
@@ -189,9 +188,9 @@ impl State {
 
     pub async fn remote(&self, s: &Session, method: &str, p: &Value) -> Result<Value> {
         if method == "preview" {
-            operations::require(s, "read")?;
+            s.require("read")?;
             let location = text(p, "uri")?;
-            let path = uri::path(location, s.storage_scheme())?;
+            let path = s.path(location)?;
             let (bytes, truncated, byte_limited) = preview_read(s, &path).await?;
             let (kind, mime) = if let Some(mime) = image_mime(&bytes) {
                 ("image", mime)
@@ -207,7 +206,7 @@ impl State {
                 ("text", "text/plain")
             };
             let token = Uuid::new_v4().to_string();
-            let result = json!({"token": token, "kind": kind, "mime": mime, "size": bytes.len(), "digest": digest(&bytes), "truncated": truncated, "byteLimited": byte_limited, "editable": kind == "text" && !truncated && operations::capabilities(s)["edit"] == true});
+            let result = json!({"token": token, "kind": kind, "mime": mime, "size": bytes.len(), "digest": digest(&bytes), "truncated": truncated, "byteLimited": byte_limited, "editable": kind == "text" && !truncated && s.capabilities()["edit"] == true});
             let mut previews = self.previews.lock().unwrap();
             previews.retain(|_, v| v.touched.elapsed() < TTL);
             let total: usize = previews
@@ -266,7 +265,7 @@ impl State {
                 }
                 "stageText" => {
                     s.writable()?;
-                    operations::require(s, "edit")?;
+                    s.require("edit")?;
                     if v.truncated {
                         return Err(error("unsupported", "Partial previews are read-only"));
                     }
@@ -301,7 +300,7 @@ impl State {
                 }
                 "saveText" => {
                     s.writable()?;
-                    operations::require(s, "edit")?;
+                    s.require("edit")?;
                     if v.truncated {
                         return Err(error("unsupported", "Partial previews are read-only"));
                     }
@@ -322,9 +321,9 @@ impl State {
             }
         };
         let _mutation = s.mutations.lock().await;
-        let path = uri::path(&commit.0, s.storage_scheme())?;
+        let path = s.path(&commit.0)?;
         let force = flag(p, "force", false)?;
-        let before = operations::stat(&s.operator, &path).await?;
+        let before = operations::stat(&s.operator(), &path).await?;
         if !before.is_file() {
             return Err(error("unsupported", "Only regular files can be edited"));
         }
@@ -334,8 +333,8 @@ impl State {
                 "Remote file changed; reload or explicitly overwrite",
             ));
         }
-        let cap = s.operator.info().full_capability();
-        let mut write = s.operator.write_with(&path, commit.2.clone());
+        let cap = s.raw_capability();
+        let mut write = s.operator().write_with(&path, commit.2.clone());
         if !force && cap.write_with_if_match {
             if let Some(etag) = before.etag() {
                 write = write.if_match(etag);
@@ -348,8 +347,8 @@ impl State {
                 remote(e)
             }
         })?;
-        if commit.2.is_empty() && s.storage_scheme() == "ftp" {
-            operations::write_empty_file(&s.operator, &path).await?;
+        if commit.2.is_empty() && cap.write_can_append && !cap.write_can_multi {
+            operations::write_empty_file(&s.operator(), &path).await?;
         }
         let hash = digest(&commit.2);
         if let Some(v) = self.previews.lock().unwrap().get_mut(token) {
