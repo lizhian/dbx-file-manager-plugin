@@ -2,7 +2,7 @@
 
 由 `services.json` 生成，执行 `node scripts/services.mjs` 更新。
 
-OpenDAL 0.57.0，目标 aarch64-apple-darwin。“已编译”表示构建包含该服务，不代表已对全部云服务实测。SFTP 仍需要系统 OpenSSH。
+OpenDAL 0.59.1，目标 aarch64-apple-darwin。“已编译”表示构建包含该服务，不代表已对全部云服务实测。SFTP 仍需要系统 OpenSSH。
 
 | 服务与配置参考 | 状态 | 原因 |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ OpenDAL 0.57.0，目标 aarch64-apple-darwin。“已编译”表示构建包含
 | [fs](https://opendal.apache.org/services/fs/) | 已编译 | - |
 | [ftp](https://opendal.apache.org/services/ftp/) | 已编译 | - |
 | [gcs](https://opendal.apache.org/services/gcs/) | 已编译 | - |
-| [gcs-grpc](https://opendal.apache.org/services/gcs-grpc/) | 当前版本未提供 | OpenDAL 0.57 未提供该服务 |
+| [gcs-grpc](https://opendal.apache.org/services/gcs-grpc/) | 已编译 | - |
 | [gdrive](https://opendal.apache.org/services/gdrive/) | 已编译 | - |
 | [ghac](https://opendal.apache.org/services/ghac/) | 已编译 | - |
 | [github](https://opendal.apache.org/services/github/) | 已编译 | - |

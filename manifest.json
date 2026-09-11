@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.lizhian.file-manager",
   "name": "OpenDAL File Manager",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "lizhian",
   "description": "OpenDAL 文件管理：通用服务配置、目录浏览、文件传输、图片预览和文本编辑。",
   "icon": "assets/plugin.svg",
@@ -529,267 +529,267 @@
           "options": [
             {
               "value": "aliyun-drive",
-              "label": "aliyun-drive（已编译）"
+              "label": "aliyun-drive"
             },
             {
               "value": "alluxio",
-              "label": "alluxio（已编译）"
+              "label": "alluxio"
             },
             {
               "value": "azblob",
-              "label": "azblob（已编译）"
+              "label": "azblob"
             },
             {
               "value": "azdls",
-              "label": "azdls（已编译）"
+              "label": "azdls"
             },
             {
               "value": "azfile",
-              "label": "azfile（已编译）"
+              "label": "azfile"
             },
             {
               "value": "b2",
-              "label": "b2（已编译）"
+              "label": "b2"
             },
             {
               "value": "cacache",
-              "label": "cacache（已编译）"
+              "label": "cacache"
             },
             {
               "value": "cloudflare-kv",
-              "label": "cloudflare-kv（已编译）"
+              "label": "cloudflare-kv"
             },
             {
               "value": "compfs",
-              "label": "compfs（当前平台不支持：需要 Linux io_uring）"
+              "label": "compfs"
             },
             {
               "value": "cos",
-              "label": "cos（已编译）"
+              "label": "cos"
             },
             {
               "value": "d1",
-              "label": "d1（已编译）"
+              "label": "d1"
             },
             {
               "value": "dashmap",
-              "label": "dashmap（已编译）"
+              "label": "dashmap"
             },
             {
               "value": "dbfs",
-              "label": "dbfs（已编译）"
+              "label": "dbfs"
             },
             {
               "value": "dropbox",
-              "label": "dropbox（已编译）"
+              "label": "dropbox"
             },
             {
               "value": "etcd",
-              "label": "etcd（依赖未包含：未包含 Protobuf 编译器）"
+              "label": "etcd"
             },
             {
               "value": "foundationdb",
-              "label": "foundationdb（依赖未包含：未包含 FoundationDB 客户端原生库）"
+              "label": "foundationdb"
             },
             {
               "value": "foyer",
-              "label": "foyer（已编译）"
+              "label": "foyer"
             },
             {
               "value": "fs",
-              "label": "fs（已编译）"
+              "label": "fs"
             },
             {
               "value": "ftp",
-              "label": "ftp（已编译）"
+              "label": "ftp"
             },
             {
               "value": "gcs",
-              "label": "gcs（已编译）"
+              "label": "gcs"
             },
             {
               "value": "gcs-grpc",
-              "label": "gcs-grpc（当前版本未提供：OpenDAL 0.57 未提供该服务）"
+              "label": "gcs-grpc"
             },
             {
               "value": "gdrive",
-              "label": "gdrive（已编译）"
+              "label": "gdrive"
             },
             {
               "value": "ghac",
-              "label": "ghac（已编译）"
+              "label": "ghac"
             },
             {
               "value": "github",
-              "label": "github（已编译）"
+              "label": "github"
             },
             {
               "value": "goosefs",
-              "label": "goosefs（已编译）"
+              "label": "goosefs"
             },
             {
               "value": "gridfs",
-              "label": "gridfs（已编译）"
+              "label": "gridfs"
             },
             {
               "value": "hdfs",
-              "label": "hdfs（依赖未包含：未包含 JVM 与 libhdfs；可使用 hdfs-native）"
+              "label": "hdfs"
             },
             {
               "value": "hdfs-native",
-              "label": "hdfs-native（已编译）"
+              "label": "hdfs-native"
             },
             {
               "value": "hf",
-              "label": "hf（已编译）"
+              "label": "hf"
             },
             {
               "value": "http",
-              "label": "http（已编译）"
+              "label": "http"
             },
             {
               "value": "ipfs",
-              "label": "ipfs（已编译）"
+              "label": "ipfs"
             },
             {
               "value": "ipmfs",
-              "label": "ipmfs（已编译）"
+              "label": "ipmfs"
             },
             {
               "value": "koofr",
-              "label": "koofr（已编译）"
+              "label": "koofr"
             },
             {
               "value": "lakefs",
-              "label": "lakefs（已编译）"
+              "label": "lakefs"
             },
             {
               "value": "memcached",
-              "label": "memcached（已编译）"
+              "label": "memcached"
             },
             {
               "value": "memory",
-              "label": "memory（已编译）"
+              "label": "memory"
             },
             {
               "value": "mini-moka",
-              "label": "mini-moka（已编译）"
+              "label": "mini-moka"
             },
             {
               "value": "moka",
-              "label": "moka（已编译）"
+              "label": "moka"
             },
             {
               "value": "mongodb",
-              "label": "mongodb（已编译）"
+              "label": "mongodb"
             },
             {
               "value": "monoiofs",
-              "label": "monoiofs（当前平台不支持：需要 Linux io_uring）"
+              "label": "monoiofs"
             },
             {
               "value": "mysql",
-              "label": "mysql（已编译）"
+              "label": "mysql"
             },
             {
               "value": "obs",
-              "label": "obs（已编译）"
+              "label": "obs"
             },
             {
               "value": "onedrive",
-              "label": "onedrive（已编译）"
+              "label": "onedrive"
             },
             {
               "value": "opfs",
-              "label": "opfs（当前平台不支持：需要浏览器 WASM 运行环境）"
+              "label": "opfs"
             },
             {
               "value": "oss",
-              "label": "oss（已编译）"
+              "label": "oss"
             },
             {
               "value": "pcloud",
-              "label": "pcloud（已编译）"
+              "label": "pcloud"
             },
             {
               "value": "persy",
-              "label": "persy（已编译）"
+              "label": "persy"
             },
             {
               "value": "postgresql",
-              "label": "postgresql（已编译）"
+              "label": "postgresql"
             },
             {
               "value": "redb",
-              "label": "redb（已编译）"
+              "label": "redb"
             },
             {
               "value": "redis",
-              "label": "redis（已编译）"
+              "label": "redis"
             },
             {
               "value": "rocksdb",
-              "label": "rocksdb（依赖未包含：未包含 RocksDB 原生构建依赖）"
+              "label": "rocksdb"
             },
             {
               "value": "s3",
-              "label": "s3（已编译）"
+              "label": "s3"
             },
             {
               "value": "seafile",
-              "label": "seafile（已编译）"
+              "label": "seafile"
             },
             {
               "value": "sftp",
-              "label": "sftp（已编译）"
+              "label": "sftp"
             },
             {
               "value": "sled",
-              "label": "sled（已编译）"
+              "label": "sled"
             },
             {
               "value": "sqlite",
-              "label": "sqlite（已编译）"
+              "label": "sqlite"
             },
             {
               "value": "surrealdb",
-              "label": "surrealdb（已编译）"
+              "label": "surrealdb"
             },
             {
               "value": "swift",
-              "label": "swift（已编译）"
+              "label": "swift"
             },
             {
               "value": "tikv",
-              "label": "tikv（依赖未包含：未包含 TiKV gRPC 原生构建依赖）"
+              "label": "tikv"
             },
             {
               "value": "tos",
-              "label": "tos（已编译）"
+              "label": "tos"
             },
             {
               "value": "upyun",
-              "label": "upyun（已编译）"
+              "label": "upyun"
             },
             {
               "value": "vercel-artifacts",
-              "label": "vercel-artifacts（已编译）"
+              "label": "vercel-artifacts"
             },
             {
               "value": "vercel-blob",
-              "label": "vercel-blob（已编译）"
+              "label": "vercel-blob"
             },
             {
               "value": "webdav",
-              "label": "webdav（已编译）"
+              "label": "webdav"
             },
             {
               "value": "webhdfs",
-              "label": "webhdfs（已编译）"
+              "label": "webhdfs"
             },
             {
               "value": "yandex-disk",
-              "label": "yandex-disk（已编译）"
+              "label": "yandex-disk"
             }
           ]
         },

@@ -1,4 +1,5 @@
 use crate::error::{error, Result};
+use opendal::OperationContext;
 use opendal::{raw::*, Buffer, Error, ErrorKind, Metadata};
 use std::{fmt, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -71,60 +72,100 @@ impl StreamingLayer {
 }
 
 #[derive(Debug)]
-pub struct StreamingAccess<A> {
-    inner: A,
+pub struct StreamingAccess {
+    inner: Servicer,
     config: StreamingLayer,
-    info: Arc<AccessorInfo>,
 }
-
-impl<A: Access> Layer<A> for StreamingLayer {
-    type LayeredAccess = StreamingAccess<A>;
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        let info = inner.info();
-        info.update_full_capability(|mut c| {
-            c.write_can_multi = true;
-            c
-        });
-        StreamingAccess {
+impl Layer for StreamingLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(StreamingAccess {
             inner,
             config: self.clone(),
-            info,
-        }
+        })
     }
 }
-
-impl<A: Access> LayeredAccess for StreamingAccess<A> {
-    type Inner = A;
-    type Reader = A::Reader;
+impl Service for StreamingAccess {
+    type Reader = oio::Reader;
     type Writer = StreamingWriter;
-    type Lister = A::Lister;
-    type Deleter = A::Deleter;
-    type Copier = A::Copier;
-    fn inner(&self) -> &A {
-        &self.inner
+    type Lister = oio::Lister;
+    type Deleter = oio::Deleter;
+    type Copier = oio::Copier;
+    type Composer = ();
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
-    fn info(&self) -> Arc<AccessorInfo> {
-        self.info.clone()
+    fn capability(&self) -> opendal::Capability {
+        let mut c = self.inner.capability();
+        c.write_can_multi = true;
+        c
     }
-    async fn read(&self, path: &str, args: OpRead) -> opendal::Result<(RpRead, Self::Reader)> {
-        self.inner.read(path, args).await
-    }
-    async fn list(&self, path: &str, args: OpList) -> opendal::Result<(RpList, Self::Lister)> {
-        self.inner.list(path, args).await
-    }
-    async fn delete(&self) -> opendal::Result<(RpDelete, Self::Deleter)> {
-        self.inner.delete().await
-    }
-    async fn copy(
+    async fn create_dir(
         &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> opendal::Result<RpCreateDir> {
+        self.inner.create_dir(ctx, path, args).await
+    }
+    async fn stat(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpStat,
+    ) -> opendal::Result<RpStat> {
+        self.inner.stat(ctx, path, args).await
+    }
+    fn read(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRead,
+    ) -> opendal::Result<Self::Reader> {
+        self.inner.read(ctx, path, args)
+    }
+    fn list(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpList,
+    ) -> opendal::Result<Self::Lister> {
+        self.inner.list(ctx, path, args)
+    }
+    fn delete(&self, ctx: &OperationContext) -> opendal::Result<Self::Deleter> {
+        self.inner.delete(ctx)
+    }
+    fn copy(
+        &self,
+        ctx: &OperationContext,
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
-    ) -> opendal::Result<(RpCopy, Self::Copier)> {
-        self.inner.copy(from, to, args, opts).await
+    ) -> opendal::Result<Self::Copier> {
+        self.inner.copy(ctx, from, to, args)
     }
-    async fn write(&self, path: &str, args: OpWrite) -> opendal::Result<(RpWrite, Self::Writer)> {
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> opendal::Result<RpRename> {
+        self.inner.rename(ctx, from, to, args).await
+    }
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> opendal::Result<RpPresign> {
+        self.inner.presign(ctx, path, args).await
+    }
+    fn write(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        args: OpWrite,
+    ) -> opendal::Result<Self::Writer> {
         if args.append() {
             return Err(Error::new(
                 ErrorKind::Unsupported,
@@ -161,7 +202,7 @@ impl<A: Access> LayeredAccess for StreamingAccess<A> {
                 .map_err(|_| Error::new(ErrorKind::Unexpected, "WebDAV streaming PUT failed"))?;
             let status = response.status();
             if status.is_success() {
-                return Ok(Metadata::default());
+                return Ok(opendal::MetadataBuilder::unknown().build());
             }
             let kind = match status.as_u16() {
                 401 | 403 => ErrorKind::PermissionDenied,
@@ -173,17 +214,16 @@ impl<A: Access> LayeredAccess for StreamingAccess<A> {
             };
             Err(Error::new(kind, "WebDAV server rejected streaming PUT"))
         });
-        Ok((
-            RpWrite::new(),
-            StreamingWriter {
-                sender: Some(sender),
-                task: Some(task),
-            },
-        ))
+        Ok(StreamingWriter {
+            written: 0,
+            sender: Some(sender),
+            task: Some(task),
+        })
     }
 }
 
 pub struct StreamingWriter {
+    written: u64,
     sender: Option<mpsc::Sender<Buffer>>,
     task: Option<JoinHandle<opendal::Result<Metadata>>>,
 }
@@ -219,11 +259,13 @@ impl oio::Write for StreamingWriter {
                 });
             }
         }
+        self.written += buffer.len() as u64;
         Ok(())
     }
     async fn close(&mut self) -> opendal::Result<Metadata> {
         self.sender.take();
-        self.response().await
+        self.response().await?;
+        Ok(opendal::MetadataBuilder::file(self.written).build())
     }
     async fn abort(&mut self) -> opendal::Result<()> {
         self.sender.take();

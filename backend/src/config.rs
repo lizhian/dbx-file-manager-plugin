@@ -262,12 +262,6 @@ impl ConnectionRequest {
                 if protocol == "ftp" {
                     set("password", secret("password"));
                 } else {
-                    #[cfg(not(unix))]
-                    return Err(error(
-                        "unsupported",
-                        "SFTP is supported on macOS and Linux only",
-                    ));
-                    #[cfg(unix)]
                     {
                         set("known_hosts_strategy", "Accept");
                         match optional("authentication", "ssh_config")?.as_str() {

@@ -43,3 +43,14 @@ npm run build
 六协议通过真实浏览器桥接完成上传下载比对、目录操作、图片解码、文本预览与保存、冲突检测；六个 Tab 的草稿隔离和重复打开去重通过。
 S3 另验证了页面按钮触发的 macOS 原生文件选择及下载保存，下载字节与源文件一致。
 连接表单测试与保存、关闭重开 Tab、主题切换、页面重载、后端重建和重新连接通过；验收远程目录已清理。
+
+## URI scheme 错误与构建配对
+
+若出现 `URI must use this provider's root-relative scheme`，检查模拟宿主启动参数中的 `--backend`。
+统一前端使用 `opendal:/`，不能与 `runtime/generic-package-review/` 等历史解包目录中的旧后端混用；即使两者版本号同为 0.2.0，内部路径契约也可能不同。
+开发联调使用 `npm run dev:standalone`，或指定 `--backend backend/target/debug/dbx-plugin-dbx-file-manager-plugin` 并配置源码构建命令。
+修正启动配置后重启模拟宿主、刷新浏览器并重新连接。仅重载页面，或对未配置 build-config 的历史后端点击“重建后端”，不会更新可执行文件。
+验收历史安装包时，backend 和 ui-root 必须都来自同一个解包目录。
+
+2026-09-11：5243 实例改为当前源码后端并配置 backend/ui 构建；保留原有连接，补齐缺少的五种本地测试连接。
+浏览器验证六种专用连接与通用入口的连接、列表全部通过；六协议工作台读写集成测试通过。

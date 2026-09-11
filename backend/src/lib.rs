@@ -2,6 +2,7 @@ mod config;
 mod error;
 mod generic;
 mod operations;
+mod service_support;
 mod session;
 mod transfer;
 mod uri;
@@ -11,7 +12,7 @@ mod workbench;
 use config::ConnectionRequest;
 pub use config::PLUGIN_ID;
 use dbx_plugin_sdk::{PluginEmitter, PluginError, PluginHandler, RequestContext};
-use error::{error, recovery, text, Result};
+use error::{error, text, Result};
 use serde_json::{json, Value};
 use session::{Activity, Session};
 use std::{

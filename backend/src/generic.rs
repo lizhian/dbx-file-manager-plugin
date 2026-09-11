@@ -1,31 +1,6 @@
 use crate::error::{error, remote, Result};
 use opendal::{Configurator, Operator};
-use serde::Deserialize;
-use std::{collections::HashMap, sync::LazyLock};
-
-#[derive(Deserialize)]
-pub struct Service {
-    pub id: String,
-    pub scheme: String,
-    pub status: String,
-    pub reason: String,
-}
-#[derive(Deserialize)]
-struct Catalog {
-    services: Vec<Service>,
-}
-pub static SERVICES: LazyLock<Vec<Service>> = LazyLock::new(|| {
-    serde_json::from_str::<Catalog>(include_str!("../../services.json"))
-        .expect("validated service catalog")
-        .services
-});
-
-pub fn service(id: &str) -> Result<&'static Service> {
-    SERVICES
-        .iter()
-        .find(|s| s.id == id)
-        .ok_or_else(|| error("configuration", "Unknown OpenDAL service"))
-}
+use std::collections::HashMap;
 
 pub fn parameters(input: &str) -> Result<HashMap<String, String>> {
     if input.len() > 256 * 1024 {
@@ -62,13 +37,7 @@ pub struct Configuration {
 
 impl Configuration {
     pub fn build(self) -> Result<Operator> {
-        let service = service(&self.service)?;
-        if service.status != "compiled" {
-            return Err(error(
-                "service_unavailable",
-                &format!("{}: {}", service.id, service.reason),
-            ));
-        }
+        let service = crate::service_support::check(&self.service)?;
         if let Some(root) = self.parameters.get("root") {
             if root.contains('\\')
                 || root.chars().any(char::is_control)
@@ -77,7 +46,6 @@ impl Configuration {
                 return Err(error("configuration", "Invalid configured root"));
             }
         }
-        opendal::init_default_registry();
         build_operator(&service.scheme, self.parameters)
     }
 }
@@ -101,7 +69,8 @@ fn build_operator(scheme: &str, parameters: HashMap<String, String>) -> Result<O
         "s3" if parameters.contains_key("assume_role_session_tags") => {
             with_map::<opendal::services::S3Config>(&parameters, "assume_role_session_tags")?
         }
-        _ => Operator::via_iter(scheme, parameters.clone()).map_err(remote)?,
+        _ => Operator::via_iter(scheme, parameters.clone())
+            .map_err(|e| crate::service_support::construction_error(scheme, e))?,
     };
     // Reuse the existing streaming adapter at construction, keeping file operations generic.
     if scheme == "webdav" {
@@ -123,7 +92,7 @@ fn build_operator(scheme: &str, parameters: HashMap<String, String>) -> Result<O
     Ok(operator)
 }
 
-// OpenDAL 0.57's string-map deserializer does not implement nested maps. Keep
+// OpenDAL 0.59's string-map deserializer does not implement nested maps. Keep
 // this version adapter at the configuration boundary; scalar types remain SDK-owned.
 fn with_map<C>(parameters: &HashMap<String, String>, key: &str) -> Result<Operator>
 where
@@ -143,7 +112,5 @@ where
     config[key] = serde_json::json!(map);
     let config: C = serde_json::from_value(config)
         .map_err(|_| error("configuration", "Invalid service configuration"))?;
-    Operator::from_config(config)
-        .map(|builder| builder.finish())
-        .map_err(remote)
+    Operator::from_config(config).map_err(remote)
 }

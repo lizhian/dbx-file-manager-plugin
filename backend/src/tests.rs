@@ -1,6 +1,8 @@
 use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use opendal::raw::*;
 use opendal::{services, Operator};
+use opendal::{BytesRange, OperationContext};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 fn install_session(p: &Plugin, id: String, session: Arc<Session>) {
@@ -15,7 +17,7 @@ fn install_session(p: &Plugin, id: String, session: Arc<Session>) {
 
 fn memory(read_only: bool) -> (Plugin, Arc<Session>) {
     let p = Plugin::new().unwrap();
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let s = Arc::new(Session::new("test".into(), op, read_only));
     install_session(&p, s.id.clone(), s.clone());
     (p, s)
@@ -543,7 +545,7 @@ fn query_and_idle_common_fields_preserve_zero_semantics() {
 
 #[test]
 fn concurrent_first_connect_and_same_config_are_idempotent() {
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let (p, builds) = configurable_operator(op);
     let barrier = std::sync::Barrier::new(8);
     std::thread::scope(|scope| {
@@ -572,7 +574,7 @@ fn concurrent_first_connect_and_same_config_are_idempotent() {
 
 #[test]
 fn config_replacement_drains_old_generation_and_invalidates_cursors() {
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let (p, builds) = configurable_operator(op.clone());
     p.runtime.block_on(async {
         op.write("a", "a").await.unwrap();
@@ -622,7 +624,7 @@ fn config_replacement_drains_old_generation_and_invalidates_cursors() {
 
 #[test]
 fn idle_reclaims_operator_but_preserves_descriptor_and_rebuilds_once() {
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let (p, builds) = configurable_operator(op);
     let mut request = connection("ftp");
     request["connection"]["idle_timeout_secs"] = json!(1);
@@ -695,7 +697,7 @@ fn idle_never_evicts_queued_transfer_and_reclaims_after_cleanup() {
 #[test]
 fn saved_query_timeout_controls_rpc_and_zero_waits_until_disconnect() {
     for seconds in [1, 0] {
-        let op = Operator::new(services::Memory::default()).unwrap().finish();
+        let op = Operator::new(services::Memory::default()).unwrap();
         let entered = Arc::new(AtomicBool::new(false));
         let (p, _) = configurable_operator(op.clone().layer(SlowRead(entered.clone())));
         p.runtime.block_on(op.write("source", "content")).unwrap();
@@ -745,7 +747,7 @@ fn saved_query_timeout_controls_rpc_and_zero_waits_until_disconnect() {
 
 #[test]
 fn saved_query_timeout_controls_transfer_without_per_task_override() {
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let (p, _) =
         configurable_operator(op.clone().layer(SlowRead(Arc::new(AtomicBool::new(false)))));
     p.runtime.block_on(op.write("source", "content")).unwrap();
@@ -790,7 +792,7 @@ fn saved_query_timeout_controls_transfer_without_per_task_override() {
 #[test]
 fn disconnect_during_first_build_cannot_leave_a_late_published_generation() {
     let p = Plugin::new().unwrap();
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let (entered, did_enter) = std::sync::mpsc::channel();
     let (resume, resumed) = std::sync::mpsc::channel();
     let resumed = Mutex::new(resumed);
@@ -1382,7 +1384,7 @@ fn host_download_lease_rejects_incomplete_or_out_of_parent_authority() {
 fn host_leased_download_cancel_and_timeout_leave_only_the_empty_lease_directory() {
     for cancel in [true, false] {
         let p = Plugin::new().unwrap();
-        let op = Operator::new(services::Memory::default()).unwrap().finish();
+        let op = Operator::new(services::Memory::default()).unwrap();
         p.runtime.block_on(op.write("source", "abc")).unwrap();
         let entered = Arc::new(AtomicBool::new(false));
         let s = Arc::new(Session::new(
@@ -1481,100 +1483,183 @@ fn disconnect_closes_session_and_cancels_queued_transfers() {
 #[derive(Debug, Clone)]
 struct SlowRead(Arc<AtomicBool>);
 #[derive(Debug)]
-struct SlowAccessor<A> {
-    inner: A,
+struct SlowAccessor {
+    inner: Servicer,
     entered: Arc<AtomicBool>,
     delay_read: bool,
     deny_delete: bool,
     write_pause: Option<Arc<WritePause>>,
+    capability: Option<opendal::Capability>,
 }
-impl<A: opendal::raw::Access> opendal::raw::Layer<A> for SlowRead {
-    type LayeredAccess = SlowAccessor<A>;
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        SlowAccessor {
+impl Layer for SlowRead {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(SlowAccessor {
             inner,
             entered: self.0.clone(),
             delay_read: true,
             deny_delete: false,
             write_pause: None,
-        }
+            capability: None,
+        })
     }
 }
-impl<A: opendal::raw::Access> opendal::raw::LayeredAccess for SlowAccessor<A> {
-    type Inner = A;
-    type Reader = A::Reader;
-    type Writer = PausingWriter<A::Writer>;
-    type Lister = A::Lister;
-    type Deleter = A::Deleter;
-    type Copier = A::Copier;
-    fn inner(&self) -> &A {
-        &self.inner
+impl Service for SlowAccessor {
+    type Reader = DelayedReader;
+    type Writer = PausingWriter<oio::Writer>;
+    type Lister = oio::Lister;
+    type Deleter = oio::Deleter;
+    type Copier = oio::Copier;
+    type Composer = ();
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
-    async fn read(
+    fn capability(&self) -> opendal::Capability {
+        self.capability.unwrap_or_else(|| self.inner.capability())
+    }
+    fn read(
         &self,
+        ctx: &OperationContext,
         path: &str,
-        args: opendal::raw::OpRead,
-    ) -> opendal::Result<(opendal::raw::RpRead, Self::Reader)> {
-        if self.delay_read {
-            self.entered.store(true, Ordering::SeqCst);
-            std::future::pending().await
+        args: OpRead,
+    ) -> opendal::Result<Self::Reader> {
+        Ok(DelayedReader {
+            inner: self.inner.read(ctx, path, args)?,
+            entered: self.entered.clone(),
+            delay: self.delay_read,
+        })
+    }
+    fn write(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpWrite,
+    ) -> opendal::Result<Self::Writer> {
+        // Capability fixtures write only new or explicitly truncated destinations.
+        // Memory implements multi-write but not append; keep the synthetic append
+        // policy outside the inner operator's correctness checks.
+        let args = if self.capability.is_some() && args.append() {
+            OpWrite::default()
         } else {
-            self.inner.read(path, args).await
-        }
+            args
+        };
+        Ok(PausingWriter {
+            inner: self.inner.write(ctx, path, args)?,
+            pause: self.write_pause.clone(),
+            written: 0,
+        })
     }
-    async fn write(
-        &self,
-        path: &str,
-        args: opendal::raw::OpWrite,
-    ) -> opendal::Result<(opendal::raw::RpWrite, Self::Writer)> {
-        let (reply, inner) = self.inner.write(path, args).await?;
-        Ok((
-            reply,
-            PausingWriter {
-                inner,
-                pause: self.write_pause.clone(),
-                written: 0,
-            },
-        ))
-    }
-    async fn list(
-        &self,
-        path: &str,
-        args: opendal::raw::OpList,
-    ) -> opendal::Result<(opendal::raw::RpList, Self::Lister)> {
-        self.inner.list(path, args).await
-    }
-    async fn delete(&self) -> opendal::Result<(opendal::raw::RpDelete, Self::Deleter)> {
+    fn delete(&self, ctx: &OperationContext) -> opendal::Result<Self::Deleter> {
         if self.deny_delete {
             return Err(opendal::Error::new(
                 opendal::ErrorKind::PermissionDenied,
                 "Injected delete failure",
             ));
         }
-        self.inner.delete().await
+        self.inner.delete(ctx)
     }
-    async fn copy(
+    async fn create_dir(
         &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> opendal::Result<RpCreateDir> {
+        self.inner.create_dir(ctx, path, args).await
+    }
+    async fn stat(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpStat,
+    ) -> opendal::Result<RpStat> {
+        self.inner.stat(ctx, path, args).await
+    }
+    fn list(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpList,
+    ) -> opendal::Result<Self::Lister> {
+        self.inner.list(ctx, path, args)
+    }
+    fn copy(
+        &self,
+        ctx: &OperationContext,
         from: &str,
         to: &str,
-        args: opendal::raw::OpCopy,
-        opts: opendal::raw::OpCopier,
-    ) -> opendal::Result<(opendal::raw::RpCopy, Self::Copier)> {
-        self.inner.copy(from, to, args, opts).await
+        args: OpCopy,
+    ) -> opendal::Result<Self::Copier> {
+        self.inner.copy(ctx, from, to, args)
+    }
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> opendal::Result<RpRename> {
+        self.inner.rename(ctx, from, to, args).await
+    }
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> opendal::Result<RpPresign> {
+        self.inner.presign(ctx, path, args).await
     }
 }
-
+struct DelayedReader {
+    inner: oio::Reader,
+    entered: Arc<AtomicBool>,
+    delay: bool,
+}
+impl DelayedReader {
+    async fn pause(&self) {
+        if self.delay {
+            self.entered.store(true, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        }
+    }
+}
+impl oio::Read for DelayedReader {
+    async fn open(
+        &self,
+        range: BytesRange,
+    ) -> opendal::Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        self.pause().await;
+        self.inner.open(range).await
+    }
+    async fn read(&self, range: BytesRange) -> opendal::Result<(RpRead, opendal::Buffer)> {
+        self.pause().await;
+        self.inner.read(range).await
+    }
+}
+#[derive(Debug)]
 struct DenyDelete;
-impl<A: opendal::raw::Access> opendal::raw::Layer<A> for DenyDelete {
-    type LayeredAccess = SlowAccessor<A>;
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        SlowAccessor {
+impl Layer for DenyDelete {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(SlowAccessor {
             inner,
             entered: Arc::new(AtomicBool::new(false)),
             delay_read: false,
             deny_delete: true,
             write_pause: None,
-        }
+            capability: None,
+        })
+    }
+}
+#[derive(Debug)]
+struct CapabilityLayer(opendal::Capability);
+impl Layer for CapabilityLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(SlowAccessor {
+            inner,
+            entered: Arc::new(AtomicBool::new(false)),
+            delay_read: false,
+            deny_delete: false,
+            write_pause: None,
+            capability: Some(self.0),
+        })
     }
 }
 
@@ -1587,18 +1672,18 @@ struct WritePause {
     batches: Mutex<Vec<usize>>,
 }
 
+#[derive(Debug)]
 struct PauseWrites(Arc<WritePause>);
-
-impl<A: opendal::raw::Access> opendal::raw::Layer<A> for PauseWrites {
-    type LayeredAccess = SlowAccessor<A>;
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        SlowAccessor {
+impl Layer for PauseWrites {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(SlowAccessor {
             inner,
             entered: Arc::new(AtomicBool::new(false)),
             delay_read: false,
             deny_delete: false,
             write_pause: Some(self.0.clone()),
-        }
+            capability: None,
+        })
     }
 }
 
@@ -1641,7 +1726,6 @@ impl<W: opendal::raw::oio::Write> opendal::raw::oio::Write for PausingWriter<W> 
 
 #[test]
 fn append_only_streams_batch_remote_writes_with_bounded_memory() {
-    use opendal::raw::Access;
     let (p, original) = memory(false);
     let batch = 4 * 1024 * 1024;
     let payload = vec![42u8; 2 * batch + 37];
@@ -1655,13 +1739,14 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
         .clone()
         .layer(PauseWrites(counter.clone()));
     // Model WebHDFS without an atomic-write directory: append works, multi-write/copy do not.
-    op.inner().info().update_full_capability(|mut cap| {
+    let op = op.clone().layer(CapabilityLayer({
+        let mut cap = op.info().capability();
         cap.write_can_multi = false;
         cap.write_can_append = true;
         cap.write_with_if_not_exists = false;
         cap.copy = false;
         cap
-    });
+    }));
     let session = Arc::new(Session::new("test".into(), op.clone(), false));
     install_session(&p, "test".into(), session);
     let dir = tempfile::tempdir().unwrap();
@@ -1707,20 +1792,22 @@ fn append_only_streams_batch_remote_writes_with_bounded_memory() {
 
 #[test]
 fn running_upload_interruption_cleans_temporary_preserves_target_and_allows_retry() {
-    use opendal::raw::Access;
     for append_only in [false, true] {
         for cancel in [true, false] {
             let p = Plugin::new().unwrap();
-            let op = Operator::new(services::Memory::default()).unwrap().finish();
+            let op = Operator::new(services::Memory::default()).unwrap();
             p.runtime.block_on(op.write("target", "original")).unwrap();
-            if append_only {
-                op.inner().info().update_full_capability(|mut cap| {
+            let op = if append_only {
+                op.clone().layer(CapabilityLayer({
+                    let mut cap = op.info().capability();
                     cap.write_can_multi = false;
                     cap.write_can_append = true;
                     cap.write_with_if_not_exists = false;
                     cap
-                });
-            }
+                }))
+            } else {
+                op
+            };
             let pause = Arc::new(WritePause::default());
             let s = Arc::new(Session::new(
                 "test".into(),
@@ -1894,7 +1981,7 @@ fn transfer_limits_are_global_eight_and_per_connection_two() {
     let mut sessions = Vec::new();
     for connection in 0..5 {
         let id = format!("limited-{connection}");
-        let op = Operator::new(services::Memory::default()).unwrap().finish();
+        let op = Operator::new(services::Memory::default()).unwrap();
         p.runtime.block_on(op.write("source", "content")).unwrap();
         let s = Arc::new(Session::new(
             id.clone(),
@@ -1963,7 +2050,7 @@ fn transfer_limits_are_global_eight_and_per_connection_two() {
 fn running_download_cancellation_and_timeout_remove_temporary_files() {
     for cancel in [true, false] {
         let p = Plugin::new().unwrap();
-        let op = Operator::new(services::Memory::default()).unwrap().finish();
+        let op = Operator::new(services::Memory::default()).unwrap();
         p.runtime.block_on(op.write("source", "abc")).unwrap();
         let entered = Arc::new(AtomicBool::new(false));
         let s = Arc::new(Session::new(
@@ -2054,13 +2141,14 @@ fn live_native_listing_regression() {
 
 #[test]
 fn operator_session_keeps_capabilities_stable_and_paths_root_relative() {
-    use opendal::raw::Access;
-    let op = Operator::new(services::Memory::default()).unwrap().finish();
+    let op = Operator::new(services::Memory::default()).unwrap();
     let session = Session::new("snapshot".into(), op.clone(), false);
-    op.inner().info().update_full_capability(|mut c| {
+    let op = op.clone().layer(CapabilityLayer({
+        let mut c = op.info().capability();
         c.read = false;
         c
-    });
+    }));
+    assert!(!op.info().capability().read);
     assert!(session.raw_capability().read);
     assert_eq!(session.capabilities()["read"], true);
     assert_eq!(session.capabilities()["rootUri"], "opendal:/");

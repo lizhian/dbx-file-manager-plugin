@@ -1,5 +1,5 @@
 {
-  "opendalVersion": "0.57.0",
+  "opendalVersion": "0.59.1",
   "target": "aarch64-apple-darwin",
   "source": "https://opendal.apache.org/services/",
   "services": [
@@ -146,8 +146,8 @@
     {
       "id": "gcs-grpc",
       "scheme": "gcs-grpc",
-      "status": "version",
-      "reason": "OpenDAL 0.57 未提供该服务",
+      "status": "compiled",
+      "reason": "",
       "reference": "https://opendal.apache.org/services/gcs-grpc/"
     },
     {

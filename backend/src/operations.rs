@@ -18,7 +18,7 @@ pub const APPEND_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 pub const INLINE_LIMIT: u64 = 4 * 1024 * 1024;
 
 pub async fn file_metadata(op: &Operator, path: &str) -> Result<Option<Metadata>> {
-    if !op.info().full_capability().stat {
+    if !op.info().capability().stat {
         uri::non_root(path)?;
         if path.ends_with('/') {
             return Err(error("unsupported", "A file path is required"));
@@ -86,7 +86,7 @@ pub async fn exists(op: &Operator, path: &str) -> Result<bool> {
         Err(e) if e.data.as_ref().is_some_and(|d| d["code"] == "not_found") => {}
         Err(e) => return Err(e),
     }
-    if op.info().full_capability().list {
+    if op.info().capability().list {
         let dir = format!("{}/", path.trim_end_matches('/'));
         let mut lister = match op.lister_with(&dir).limit(1).await {
             Ok(lister) => lister,
@@ -195,7 +195,7 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
                 ));
             }
             destination(op, path, overwrite).await?;
-            let cap = op.info().full_capability();
+            let cap = op.info().capability();
             let needs_empty_write =
                 bytes.is_empty() && cap.write_can_append && !cap.write_can_multi;
             let mut write = op.write_with(path, bytes);
@@ -366,7 +366,7 @@ pub async fn copy_file(op: &Operator, source: &str, target: &str, overwrite: boo
         return Err(error("unsupported", "Recursive copy is not supported"));
     }
     destination(op, target, overwrite).await?;
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
     if cap.copy {
         let mut copy = op.copy_with(source, target);
         if !overwrite && cap.copy_with_if_not_exists {
@@ -421,12 +421,11 @@ pub async fn copy_file(op: &Operator, source: &str, target: &str, overwrite: boo
 }
 
 pub async fn write_empty_file(op: &Operator, path: &str) -> Result<()> {
-    use opendal::raw::{oio::Write, Access, OpWrite};
+    use opendal::raw::{oio::Write, OpWrite, Service};
     // High-level Writer::write skips empty buffers; FTP needs a real zero-byte data stream to create the file.
-    let (_, mut writer) = op
-        .inner()
-        .write(path, OpWrite::default())
-        .await
+    let mut writer = op
+        .service()
+        .write(op.context(), path, OpWrite::default())
         .map_err(remote)?;
     writer.write(opendal::Buffer::new()).await.map_err(remote)?;
     writer.close().await.map_err(remote)?;
@@ -462,7 +461,7 @@ async fn move_or_copy(s: &Session, method: &str, p: &Value) -> Result<Value> {
     } else if is_dir {
         destination(op, target, false).await?;
         rename_directory(op, source, target).await?;
-    } else if op.info().full_capability().rename {
+    } else if op.info().capability().rename {
         destination(op, target, overwrite).await?;
         op.rename(source, target).await.map_err(remote)?;
     } else {

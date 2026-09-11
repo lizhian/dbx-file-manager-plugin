@@ -162,7 +162,7 @@ impl Session {
         Self {
             id,
             verified: false,
-            capability: operator.info().full_capability(),
+            capability: operator.info().capability(),
             operator,
             read_only,
             closed: CancellationToken::new(),

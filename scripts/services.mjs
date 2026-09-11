@@ -19,7 +19,7 @@ const contribution = {
   fields: [
     { key: 'display_name', label: '连接名称', type: 'text', binding: 'name', required: true, default: 'OpenDAL' },
     { key: 'service', label: '服务', type: 'select', binding: 'secret', required: true, default: 's3',
-      options: catalog.services.map(s => ({ value: s.id, label: `${s.id}（${labels[s.status]}${s.reason ? `：${s.reason}` : ''}）` })) },
+      options: catalog.services.map(s => ({ value: s.id, label: s.id })) },
     { key: 'parameters', label: '参数', type: 'textarea', binding: 'secret', required: false, default: '',
       placeholder: 'key1=value1\nkey2=value2', description: '每行 key=value，按第一个 = 分隔，值中的空格保留。配置参考：https://opendal.apache.org/services/；不要添加引号或变量表达式。当前宿主及模拟服务明文存储，仅使用测试凭据。' },
   ], workbench: `${id}.main`,
@@ -39,9 +39,11 @@ for (const provider of manifest.contributions.filter(c => c.type === 'connection
 }
 const cargoFile = new URL('backend/Cargo.toml', root);
 const cargo = await readFile(cargoFile, 'utf8');
-const features = ['executors-tokio', 'reqwest-rustls-tls', ...catalog.services.filter(s => s.status === 'compiled' && s.id !== 'sftp').map(s => `services-${s.id}`)];
-const nextCargo = cargo.replace(/^opendal = \{ version = "=0\.57\.0", default-features = false, features = \[.*\] \}/m,
-  `opendal = { version = "=0.57.0", default-features = false, features = ${JSON.stringify(features)} }`);
+const features = ['executors-tokio', 'http-transport-reqwest', ...catalog.services.filter(s => s.status === 'compiled' && s.id !== 'sftp').map(s => `services-${s.id}`)];
+if (!/^\d+\.\d+\.\d+$/.test(catalog.opendalVersion)) throw new Error('Invalid OpenDAL version');
+const versionedCargo = cargo.replace(/(opendal = \{ version = ")[^"]+(".*)/g, `$1=${catalog.opendalVersion}$2`);
+const nextCargo = versionedCargo.replace(/^opendal = \{ version = "[^"\n]+", default-features = false, features = \[.*\] \}/m,
+  `opendal = { version = "=${catalog.opendalVersion}", default-features = false, features = ${JSON.stringify(features)} }`);
 const docs = '# OpenDAL 服务支持清单\n\n由 `services.json` 生成，执行 `node scripts/services.mjs` 更新。\n\n'
   + `OpenDAL ${catalog.opendalVersion}，目标 ${catalog.target}。“已编译”表示构建包含该服务，不代表已对全部云服务实测。SFTP 仍需要系统 OpenSSH。\n\n`
   + '| 服务与配置参考 | 状态 | 原因 |\n| --- | --- | --- |\n'

@@ -1,6 +1,7 @@
 [package]
+rust-version = "1.91"
 name = "dbx-plugin-dbx-file-manager-plugin"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -21,10 +22,10 @@ tokio-util = { version = "0.7", features = ["compat", "rt"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
-opendal = { version = "=0.57.0", default-features = false, features = ["executors-tokio","reqwest-rustls-tls","services-aliyun-drive","services-alluxio","services-azblob","services-azdls","services-azfile","services-b2","services-cacache","services-cloudflare-kv","services-cos","services-d1","services-dashmap","services-dbfs","services-dropbox","services-foyer","services-fs","services-ftp","services-gcs","services-gdrive","services-ghac","services-github","services-goosefs","services-gridfs","services-hdfs-native","services-hf","services-http","services-ipfs","services-ipmfs","services-koofr","services-lakefs","services-memcached","services-memory","services-mini-moka","services-moka","services-mongodb","services-mysql","services-obs","services-onedrive","services-oss","services-pcloud","services-persy","services-postgresql","services-redb","services-redis","services-s3","services-seafile","services-sled","services-sqlite","services-surrealdb","services-swift","services-tos","services-upyun","services-vercel-artifacts","services-vercel-blob","services-webdav","services-webhdfs","services-yandex-disk"] }
+opendal = { version = "=0.59.1", default-features = false, features = ["executors-tokio","http-transport-reqwest","services-aliyun-drive","services-alluxio","services-azblob","services-azdls","services-azfile","services-b2","services-cacache","services-cloudflare-kv","services-cos","services-d1","services-dashmap","services-dbfs","services-dropbox","services-foyer","services-fs","services-ftp","services-gcs","services-gcs-grpc","services-gdrive","services-ghac","services-github","services-goosefs","services-gridfs","services-hdfs-native","services-hf","services-http","services-ipfs","services-ipmfs","services-koofr","services-lakefs","services-memcached","services-memory","services-mini-moka","services-moka","services-mongodb","services-mysql","services-obs","services-onedrive","services-oss","services-pcloud","services-persy","services-postgresql","services-redb","services-redis","services-s3","services-seafile","services-sled","services-sqlite","services-surrealdb","services-swift","services-tos","services-upyun","services-vercel-artifacts","services-vercel-blob","services-webdav","services-webhdfs","services-yandex-disk"] }
 
 [target.'cfg(unix)'.dependencies]
-opendal = { version = "=0.57.0", default-features = false, features = ["services-sftp"] }
+opendal = { version = "=0.59.1", default-features = false, features = ["services-sftp"] }
 
 [dev-dependencies]
-opendal = { version = "=0.57.0", default-features = false, features = ["services-memory"] }
+opendal = { version = "=0.59.1", default-features = false, features = ["services-memory"] }

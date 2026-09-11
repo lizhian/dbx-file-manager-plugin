@@ -27,3 +27,16 @@ test('S3 form defaults use OpenDAL path addressing and preserve an explicit virt
   const explicit = lifecyclePayload(manifest, validateRecord(manifest, { providerId: provider.id, values: { ...values, path_style: 'false' } }));
   assert.equal(explicit.connection.connection_secrets.path_style, 'false');
 });
+
+test('generic service selection defaults to s3 and shows clean names without filtering services', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url)));
+  const catalog = JSON.parse(await readFile(new URL('../services.json', import.meta.url)));
+  const provider = manifest.contributions.find(c => c.database_type === 'opendal');
+  const service = provider.fields.find(f => f.key === 'service');
+  assert.equal(service.default, 's3');
+  assert.deepEqual(service.options, catalog.services.map(s => ({ value: s.id, label: s.id })));
+  const fresh = validateRecord(manifest, { providerId: provider.id, values: { display_name: 'New' } });
+  assert.equal(fresh.values.service, 's3');
+  const existing = validateRecord(manifest, { providerId: provider.id, values: { display_name: 'Existing', service: 'webdav' } });
+  assert.equal(existing.values.service, 'webdav');
+});

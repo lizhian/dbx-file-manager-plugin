@@ -36,7 +36,7 @@
 
 需要脱离 DBX 联调真实前后端时，运行 `npm run dev:standalone`，参见[独立调试指南](STANDALONE-DEBUG.md)。
 
-需要 Node.js 22+、Rust 和 macOS 自带 OpenSSH。依赖安装使用锁文件，官方原生打包 CLI 随 npm 可选依赖安装。
+需要 Node.js 22+、Rust 1.91+ 和 macOS 自带 OpenSSH。依赖安装使用锁文件，官方原生打包 CLI 随 npm 可选依赖安装。
 
 ```bash
 npm ci
@@ -47,7 +47,7 @@ cargo test --locked --manifest-path backend/Cargo.toml
 npm run package
 ```
 
-构建输出 `dist/io.github.lizhian.file-manager-0.2.0-darwin-arm64.dbxp`。
+构建输出 `dist/io.github.lizhian.file-manager-0.2.1-darwin-arm64.dbxp`。
 若需要代理，参见[宿主开发指南](HOST-DEVELOPMENT.md)。无需设置 `DBX_PLUGIN_SDK_ROOT`；后端已经固定官方 SDK Git 提交。
 
 复用[六协议环境](tests/README.md)执行真实读写测试：
@@ -95,7 +95,7 @@ Session 集中保存 Operator、不可变原始能力快照，以及只读、代
 
 `config.rs` 的 `ConnectionRequest::normalize()` 是连接入口 adapter：负责宿主字段兼容、认证选择、端点转换及 Hadoop XML 读取，输出统一的 `Configuration { service, parameters }`。
 六种专用入口不再直接调用 OpenDAL 服务 builder。通用入口将 Secret Store 中的 `key=value` 参数解析为相同结构。
-`generic.rs` 的 `Configuration::build()` 是唯一构建路径，集中校验服务可用性和根目录，初始化 OpenDAL registry，并应用嵌套配置与 WebDAV 流式适配。
+`generic.rs` 的 `Configuration::build()` 是唯一构建路径；委托 `service_support.rs` 检查平台、打包和运行依赖并初始化 OpenDAL registry，再校验根目录、应用嵌套配置与 WebDAV 流式适配。
 规范化配置含凭据，不实现 Debug、不写入日志；宿主 Secret Store 优先级、旧 external_config 兼容、S3 禁用环境凭据加载及认证方式互斥保持不变。
 
 验证：53 项 Rust 测试全部通过（含三个真实环境测试，覆盖六协议专用入口、通用入口和分页回归）。

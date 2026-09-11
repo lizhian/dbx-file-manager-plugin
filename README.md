@@ -27,4 +27,4 @@ npm run package
 - [宿主开发环境](docs/HOST-DEVELOPMENT.md)
 - [Docker 六协议测试环境](docs/tests/README.md)
 
-插件 ID：`io.github.lizhian.file-manager`，版本 `0.2.0`。采用 [Apache-2.0](LICENSE)，来源见 [NOTICE](NOTICE)。
+插件 ID：`io.github.lizhian.file-manager`，版本 `0.2.1`。采用 [Apache-2.0](LICENSE)，来源见 [NOTICE](NOTICE)。
