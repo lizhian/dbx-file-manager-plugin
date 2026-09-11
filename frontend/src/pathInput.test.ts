@@ -30,3 +30,25 @@ it('keeps the path input enabled and stable while a folder loads', async () => {
     expect(input.value).toBe('/');
   } finally { wrapper.unmount(); }
 });
+
+it.each(['opendal', 'ftp', 'sftp', 's3', 'webdav', 'webhdfs', 'hdfs-native'])('uses the same known-file access UI for %s without a listing capability', async connectionType => {
+  const invoke = vi.fn(async (method: string) => {
+    if (method.endsWith('/capabilities')) return { ok: true, value: { rootUri: 'opendal:/', list: false, read: true, download: true } };
+    if (method.endsWith('/chooseLocal')) return { ok: true, value: { cancelled: true } };
+    return { ok: true, value: { transfers: [] } };
+  });
+  window.dbxPlugin = { ready: Promise.resolve(), context: {}, invoke, onContext: () => () => {} };
+  const wrapper = mount(FileManager, { global: { stubs: { FileName: true } }, props: { context: { connectionId: 'test', providerId: `plugin.${connectionType}`, connectionType } } });
+  try {
+    await flushPromises();
+    expect(wrapper.text()).toContain('请输入已知文件路径');
+    await wrapper.get('[aria-label="存储路径"]').setValue('/folder/中文.txt');
+    const button = wrapper.get<HTMLButtonElement>('[aria-label="下载路径中的文件"]');
+    expect(button.element.disabled).toBe(false);
+    await button.trigger('click'); await flushPromises();
+    const request = invoke.mock.calls.find(([method]) => method.endsWith('/chooseLocal'));
+    expect(request).toBeDefined();
+    expect(invoke.mock.calls.some(([method]) => method === 'workbench/list')).toBe(false);
+    expect(wrapper.findAll('dialog[open]')).toHaveLength(0);
+  } finally { wrapper.unmount(); }
+});

@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-vue-next';
-import { sortEntries, type Entry } from './bridge';
+import { sortEntries, displayPath, resolvePath, type Entry } from './bridge';
 import FileName from './FileName.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   root: string;
+  browsable?: boolean;
   modelValue: string;
   load: (uri: string, cursor?: string) => Promise<{ entries: Entry[]; nextCursor?: string }>;
-}>();
+} >(), { browsable: true });
 const emit = defineEmits<{ 'update:modelValue': [uri: string] }>();
+const input = ref(displayPath(props.modelValue, props.root));
+const inputError = ref('');
+watch(() => props.modelValue, uri => { input.value = displayPath(uri, props.root); });
+function selectPath() {
+  try {
+    const uri = resolvePath(input.value, props.root);
+    emit('update:modelValue', uri === props.root ? uri : `${uri}/`);
+    inputError.value = '';
+  } catch (e) { inputError.value = (e as Error).message; }
+}
 const expanded = ref(new Set<string>());
 const branches = ref<Record<string, Entry[]>>({});
 const cursors = ref<Record<string, string | undefined>>({});
@@ -50,12 +61,13 @@ async function revealSelection() {
   const relative = props.modelValue.startsWith(props.root) ? props.modelValue.slice(props.root.length) : '';
   let current = props.root;
   for (const part of relative.split('/').filter(Boolean)) {
-    const next = `${current.replace(/\/$/, '')}/${encodeURIComponent(part)}/`;
+    const next = `${current.replace(/\/$/, '')}/${part}/`;
     if (!branches.value[current]) await fetchBranch(current);
     current = next;
   }
 }
 onMounted(async () => {
+  if (props.browsable === false) return;
   await fetchBranch(props.root);
   await revealSelection();
 });
@@ -63,7 +75,13 @@ onBeforeUnmount(() => { disposed = true; });
 </script>
 
 <template>
-  <div class="max-h-[min(50vh,420px)] min-h-0 overflow-auto rounded border border-base-300" aria-label="目标文件夹树">
+  <div>
+    <form class="mb-2 flex gap-2" @submit.prevent="selectPath">
+      <input v-model="input" class="input input-sm min-w-0 flex-1" aria-label="目标目录路径" />
+      <button class="btn btn-sm" type="submit">选择路径</button>
+    </form>
+    <p v-if="inputError" class="text-sm text-error" role="alert">{{ inputError }}</p>
+  <div v-if="browsable !== false" class="max-h-[min(50vh,420px)] min-h-0 overflow-auto rounded border border-base-300" aria-label="目标文件夹树">
     <template v-for="row in rows" :key="row.entry.uri + (row.more ? ':more' : '')">
       <div v-if="row.more" :style="{ paddingLeft: `${12 + row.depth * 18}px` }">
         <button type="button" class="btn btn-xs btn-ghost" :disabled="loading.has(row.entry.uri)" @click="fetchBranch(row.entry.uri, true)">加载更多</button>
@@ -79,5 +97,6 @@ onBeforeUnmount(() => { disposed = true; });
         <button v-if="errors[row.entry.uri]" type="button" class="btn btn-xs btn-ghost text-error" @click="fetchBranch(row.entry.uri, !!cursors[row.entry.uri])">加载失败，重试</button>
       </div>
     </template>
+  </div>
   </div>
 </template>

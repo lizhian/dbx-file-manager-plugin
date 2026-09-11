@@ -57,3 +57,21 @@ it('keeps pagination and retry state local and reloads on reopening', async () =
   try { await flushPromises(); expect(load).toHaveBeenLastCalledWith('opendal:/', undefined); }
   finally { reopened.unmount(); }
 });
+
+it('accepts a known destination without listing and preserves encoded directory names', async () => {
+  const load = vi.fn().mockResolvedValue({ entries: [] });
+  const wrapper = mount(FolderPicker, { global: { stubs: { FileName: true } }, props: { root: 'opendal:/', modelValue: 'opendal:/', browsable: false, load } });
+  try {
+    await flushPromises();
+    await wrapper.get('[aria-label="目标目录路径"]').setValue('/中文/a b');
+    await wrapper.get('form').trigger('submit');
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['opendal:/%E4%B8%AD%E6%96%87/a%20b/']);
+    expect(load).not.toHaveBeenCalled();
+  } finally { wrapper.unmount(); }
+  const tree = mount(FolderPicker, { global: { stubs: { FileName: true } }, props: { root: 'opendal:/', modelValue: 'opendal:/a%20b/child/', load } });
+  try {
+    await flushPromises();
+    expect(load).toHaveBeenCalledWith('opendal:/a%20b/', undefined);
+    expect(load.mock.calls.some(([uri]) => uri.includes('%2520'))).toBe(false);
+  } finally { tree.unmount(); }
+});

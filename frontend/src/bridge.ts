@@ -20,6 +20,24 @@ export function client(context: Context) {
   };
 }
 export type Client = ReturnType<typeof client>;
+export type Capability = 'list' | 'read' | 'stat' | 'write' | 'mkdir' | 'delete' | 'copy' | 'rename' | 'upload' | 'download' | 'edit';
+export type Capabilities = Partial<Record<Capability, boolean>> & {
+  rootUri?: string;
+  readOnly?: boolean;
+  nativeRename?: boolean;
+  verification?: 'verified' | 'configuration_only';
+};
+export const ROOT_URI = 'opendal:/';
+export function displayPath(uri: string, root = ROOT_URI): string {
+  if (!uri.startsWith(root)) throw new Error('路径不属于当前连接');
+  return '/' + decodeURIComponent(uri.slice(root.length));
+}
+export function resolvePath(input: string, root = ROOT_URI): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(input)) throw new Error('请输入相对于连接根目录的路径，不要输入服务 URL');
+  const relative = input.replace(/^\//, '').replace(/\/$/, '');
+  if (!relative) return root;
+  return relative.split('/').reduce((parent, name) => childUri(parent, name), root);
+}
 export interface Entry { name: string; uri: string; kind: string; size?: number; modifiedAt?: string }
 export interface Transfer { transferId: string; direction: string; state: string; bytesTransferred: number; totalBytes?: number; uri: string; error?: unknown }
 export function parentUri(uri: string): string {

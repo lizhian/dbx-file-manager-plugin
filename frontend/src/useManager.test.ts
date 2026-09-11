@@ -13,7 +13,7 @@ async function setup(connectionId = 'a', ask = vi.fn().mockResolvedValue(null), 
     const custom = handler?.(method, p);
     if (custom !== undefined) return custom;
     let value: any = {};
-    if (method.endsWith('/capabilities')) value = { read: true, write: true, list: true, mkdir: true, rename: true, delete: true, upload: true, download: true };
+    if (method.endsWith('/capabilities')) value = { read: true, write: true, edit: true, list: true, mkdir: true, rename: true, delete: true, upload: true, download: true };
     if (method.endsWith('/list')) value = { entries: [{ name: 'edit.txt', kind: 'file', uri: 'opendal:/edit.txt' }], transfers: [] };
     if (method.endsWith('/preview')) value = { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes) };
     if (method.endsWith('/previewChunk')) value = { dataBase64: encode(bytes), nextOffset: bytes.length };
@@ -29,11 +29,11 @@ describe('file manager workflows', () => {
   it('opens known paths without listing, reports unsupported operations, and blocks unsafe edits', async () => {
     const bytes = new TextEncoder().encode('original');
     const { manager: m, invoke, ask } = await setup('generic', undefined, method => {
-      if (method.endsWith('/capabilities')) return { ok: true, value: { list: false, read: true, download: true, service: 'http' } };
+      if (method.endsWith('/capabilities')) return { ok: true, value: { list: false, read: true, download: true } };
       if (method.endsWith('/preview')) return { ok: true, value: { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes), editable: false } };
     });
     await m.initialize({ connectionId: 'generic', providerId: 'plugin.opendal', connectionType: 'opendal' });
-    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: '操作不支持' }));
+    expect(ask).not.toHaveBeenCalled();
     m.inputPath.value = '/folder/中文.txt';
     await m.accessPath('preview');
     expect(m.preview.value?.entry.uri).toBe('opendal:/folder/%E4%B8%AD%E6%96%87.txt');
@@ -127,4 +127,21 @@ describe('file manager workflows', () => {
     const b = await setup('b');
     expect(b.manager.content.value).toBe(''); expect(a.manager.content.value).toBe('private draft');
   });
+});
+
+it('protects drafts before moving and keeps copy available independently of rename', async () => {
+  const { manager: m, invoke } = await setup();
+  m.capabilities.value.copy = true;
+  m.capabilities.value.rename = false;
+  m.selected.value = m.entries.value[0];
+  await m.copyTo('opendal:/target/', false, 'copy.txt');
+  expect(invoke.mock.calls.some(([method]) => method.endsWith('/copy'))).toBe(true);
+  m.capabilities.value.rename = true;
+  await m.open(m.entries.value[0]); m.content.value = 'unsaved';
+  await m.copyTo('opendal:/target/', true, 'moved.txt');
+  expect(invoke.mock.calls.some(([method]) => method.endsWith('/rename'))).toBe(false);
+  expect(m.content.value).toBe('unsaved');
+  m.capabilities.value.readOnly = true;
+  expect(m.can('copy')).toBe(false);
+  expect(m.canEdit.value).toBe(false);
 });

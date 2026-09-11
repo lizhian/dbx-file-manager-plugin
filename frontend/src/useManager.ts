@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
 import { sha256 } from 'js-sha256';
-import { childUri, client, decode, encode, parentUri, RpcError, sortEntries, type Client, type Context, type Entry, type Transfer } from './bridge';
+import { childUri, client, decode, encode, parentUri, RpcError, sortEntries, type Capabilities, type Capability, ROOT_URI, resolvePath, displayPath, type Client, type Context, type Entry, type Transfer } from './bridge';
 
 export interface Question { title: string; message?: string; value?: string; danger?: boolean; confirm?: string }
 export type Ask = (question: Question) => Promise<string | null>;
@@ -14,23 +14,20 @@ export function useManager(ask: Ask) {
   const entries = ref<Entry[]>([]);
   const cursor = ref<string>();
   const selected = ref<Entry>();
-  const capabilities = ref<Record<string, any>>({});
+  const capabilities = ref<Capabilities>({});
   const busy = ref(false);
   const error = ref('');
   const status = ref('');
-  const filter = ref('');
-  const order = ref<'name' | 'size'>('name');
   const tree = ref<Record<string, Entry[]>>({});
   const expanded = ref(new Set<string>());
   const treeCursors = ref<Record<string, string | undefined>>({});
   const transfers = ref<Transfer[]>([]);
   const localTokens = ref<Record<string, string>>({});
   const preview = shallowRef<{ token: string; entry: Entry; kind: string; url?: string; truncated?: boolean; byteLimited?: boolean; editable?: boolean }>();
-  const editTarget = ref<string>();
   const content = ref('');
   const original = ref('');
   const dirty = computed(() => content.value !== original.value);
-  const rows = computed(() => sortEntries(entries.value.filter(e => e.name.toLocaleLowerCase().includes(filter.value.toLocaleLowerCase())), order.value));
+  const rows = computed(() => sortEntries(entries.value));
   const tableRows = computed(() => {
     const result: { entry: Entry; depth: number; more?: boolean }[] = [];
     const visit = (items: Entry[], depth: number) => {
@@ -63,8 +60,13 @@ export function useManager(ask: Ask) {
   async function unsupported(operation: string) {
     await ask({ title: '操作不支持', message: `当前连接：不支持${operation}，或无法满足该操作所需的文件管理保证。`, confirm: '知道了' });
   }
-  async function requireCapability(capability: string, operation: string) {
-    if (capabilities.value[capability]) return true;
+  function can(capability: Capability) {
+    const mutation = ['write', 'mkdir', 'delete', 'copy', 'rename', 'upload', 'edit'].includes(capability);
+    return capabilities.value[capability] === true && !(mutation && capabilities.value.readOnly);
+  }
+  const canEdit = computed(() => can('edit') && can('write') && preview.value?.kind === 'text' && !preview.value.truncated && preview.value.editable !== false);
+  async function requireCapability(capability: Capability, operation: string) {
+    if (can(capability)) return true;
     await unsupported(operation); return false;
   }
   async function run(action: () => Promise<void>, operation = '此操作') {
@@ -87,9 +89,9 @@ export function useManager(ask: Ask) {
     preview.value = undefined; content.value = ''; original.value = '';
   }
   async function load(target: string, more = false) {
-    if (capabilities.value.list === false) {
+    if (!can('list')) {
       entries.value = []; cursor.value = undefined;
-      path.value = target; inputPath.value = decodeURIComponent(target.slice(root.value.length - 1));
+      path.value = target; inputPath.value = displayPath(target, root.value);
       return;
     }
     const g = generation;
@@ -97,7 +99,7 @@ export function useManager(ask: Ask) {
     if (g !== generation) return;
     entries.value = more ? [...entries.value, ...response.entries] : response.entries;
     cursor.value = response.nextCursor || undefined;
-    path.value = target; inputPath.value = decodeURIComponent(target.slice(root.value.length - 1));
+    path.value = target; inputPath.value = displayPath(target, root.value);
     tree.value[target] = entries.value;
     if (!more) for (const uri of [...expanded.value]) {
       if (uri === target) continue;
@@ -113,21 +115,18 @@ export function useManager(ask: Ask) {
       if (!await discard()) return;
       await load(target);
       expanded.value.clear(); tree.value = {}; treeCursors.value = {};
-      release(); selected.value = undefined; filter.value = '';
+      release(); selected.value = undefined;
     });
   }
   async function refresh() { await run(async () => {
-    const wasUnsupported = capabilities.value.list === false;
-    capabilities.value = await api('capabilities'); await load(path.value);
-    if (capabilities.value.list === false && !wasUnsupported) await unsupported('目录浏览，请输入已知文件路径访问');
+    const snapshot = await api<Capabilities>('capabilities');
+    if (snapshot.rootUri && snapshot.rootUri !== ROOT_URI) throw new Error('连接返回了不支持的根路径');
+    capabilities.value = snapshot; await load(path.value);
   }, '刷新目录'); }
   async function accessPath(operation: 'directory' | 'preview' | 'download') {
     let target: string;
     try {
-      const raw = inputPath.value;
-      if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) throw new Error('请输入相对于连接根目录的路径，不要输入服务 URL');
-      target = raw.replace(/^\//, '').replace(/\/$/, '').split('/').filter((p, i, all) => p !== '' || all.length > 1)
-        .reduce((parent, part) => childUri(parent, part), root.value);
+      target = resolvePath(inputPath.value, root.value);
     } catch (e) { error.value = message(e); return; }
     if (operation === 'directory') return navigate(target === root.value ? target : `${target}/`);
     if (target === root.value) { error.value = '请输入文件路径'; return; }
@@ -138,6 +137,7 @@ export function useManager(ask: Ask) {
   }
   async function more() { await run(() => load(path.value, true)); }
   async function listDirectories(uri: string, cursor?: string): Promise<{ entries: Entry[]; nextCursor?: string }> {
+    if (!can('list')) return { entries: [] };
     const result = await api('list', { uri, limit: 200, ...(cursor ? { cursor } : {}) });
     return { entries: result.entries.filter((entry: Entry) => entry.kind === 'directory'), nextCursor: result.nextCursor };
   }
@@ -190,7 +190,7 @@ export function useManager(ask: Ask) {
   }
   async function closePreview() { if (!busy.value && await discard()) release(); }
   async function save() {
-    if (!preview.value || preview.value.truncated || preview.value.editable === false || !capabilities.value.write || !dirty.value) return;
+    if (!canEdit.value || !dirty.value) return;
     await run(async () => {
       const bytes = new TextEncoder().encode(content.value);
       if (bytes.length > 2 * 1024 * 1024) throw new Error('文本编辑上限为 2 MiB');
@@ -223,21 +223,7 @@ export function useManager(ask: Ask) {
     await run(async () => { if (!name) return; if (!await requireCapability('mkdir', '新建目录')) return; await api('createDirectory', { uri: childUri(directory, name) }); await load(path.value); });
   }
   async function rename(requestedName?: string) {
-    const entry = selected.value; if (!entry) return;
-    await run(async () => {
-      if (!await requireCapability('rename', '重命名')) return;
-      if (!await discard()) return;
-      const name = requestedName || await ask({ title: '重命名', value: entry.name, message: capabilities.value.nativeRename ? undefined : '此服务通过复制后删除完成重命名，操作不是原子的。', confirm: '重命名' });
-      if (name === null || name === entry.name) return;
-      const params = { sourceUri: entry.uri, targetUri: childUri(parentUri(entry.uri), name), overwrite: false };
-      try { await api('rename', params); }
-      catch (e) {
-        if (!(e instanceof RpcError) || e.code !== 'already_exists' || entry.kind !== 'file') throw e;
-        if (await ask({ title: '目标已存在，是否覆盖？', danger: true, confirm: '覆盖' }) === null) return;
-        await api('rename', { ...params, overwrite: true });
-      }
-      release(); selected.value = undefined; tree.value = {}; await load(path.value);
-    });
+    if (selected.value) await copyTo(parentUri(selected.value.uri), true, requestedName);
   }
   async function remove() {
     const entry = selected.value; if (!entry) return;
@@ -250,32 +236,28 @@ export function useManager(ask: Ask) {
     });
   }
   async function copy() {
-    const entry = selected.value;
-    if (!entry || entry.kind !== 'file') return;
-    await run(async () => {
-      if (!await requireCapability('copy', '复制')) return;
-      const name = await ask({ title: '复制文件', value: entry.name, message: '填写同目录下的新文件名。', confirm: '复制' });
-      if (name === null || name === entry.name) return;
-      const params = { sourceUri: entry.uri, targetUri: childUri(parentUri(entry.uri), name), overwrite: false };
-      try { await api('copy', params); }
-      catch (e) {
-        if (!(e instanceof RpcError) || e.code !== 'already_exists') throw e;
-        if (await ask({ title: '目标已存在，是否覆盖？', danger: true, confirm: '覆盖' }) === null) return;
-        await api('copy', { ...params, overwrite: true });
-      }
-      await load(path.value);
-    });
+    if (selected.value) await copyTo(parentUri(selected.value.uri));
   }
   async function copyTo(targetDirectory: string, move = false, requestedName?: string) {
-    const entry = selected.value; if (!entry || entry.kind !== 'file') return;
+    const entry = selected.value;
+    if (!entry || (!move && entry.kind !== 'file')) return;
     await run(async () => {
-      if (!await requireCapability(move ? 'rename' : 'copy', move ? '移动' : '复制')) return;
-      const name = requestedName || await ask({ title: move ? '移动文件' : '复制文件', value: entry.name, confirm: move ? '移动' : '复制' });
-      if (!name || name === entry.name && targetDirectory === parentUri(entry.uri)) return;
-      const params = { sourceUri: entry.uri, targetUri: childUri(targetDirectory, name), overwrite: false };
-      try { await api(move ? 'rename' : 'copy', params); }
-      catch (e) { if (!(e instanceof RpcError) || e.code !== 'already_exists') throw e; if (await ask({ title: '目标已存在，是否覆盖？', danger: true, confirm: '覆盖' }) === null) return; await api(move ? 'rename' : 'copy', { ...params, overwrite: true }); }
-      editTarget.value = undefined; await load(path.value);
+      if (!await requireCapability(move ? 'rename' : 'copy', move ? '移动或重命名' : '复制')) return;
+      if (move && !await discard()) return;
+      const name = requestedName ?? await ask({ title: move ? '移动或重命名' : '复制文件', value: entry.name, confirm: move ? '确定' : '复制' });
+      if (!name) return;
+      const targetUri = childUri(targetDirectory, name);
+      if (targetUri === entry.uri.replace(/\/$/, '')) return;
+      const params = { sourceUri: entry.uri, targetUri, overwrite: false };
+      const method = move ? 'rename' : 'copy';
+      try { await api(method, params); }
+      catch (e) {
+        if (!(e instanceof RpcError) || e.code !== 'already_exists' || entry.kind !== 'file') throw e;
+        if (await ask({ title: '目标已存在，是否覆盖？', danger: true, confirm: '覆盖' }) === null) return;
+        await api(method, { ...params, overwrite: true });
+      }
+      if (move) { release(); selected.value = undefined; tree.value = {}; }
+      await load(path.value);
     });
   }
   async function transfer(upload: boolean, targetDirectory = path.value) {
@@ -318,9 +300,9 @@ export function useManager(ask: Ask) {
   async function initialize(context: Context) {
     release(); generation++; clearTimeout(timer);
     entries.value = []; tree.value = {}; expanded.value = new Set(); treeCursors.value = {}; localTokens.value = {}; transfers.value = []; selected.value = undefined;
-    capabilities.value = {}; busy.value = false; filter.value = '';
+    capabilities.value = {}; busy.value = false;
     try { api = client(context); } catch (e) { error.value = message(e); return; }
-    root.value = 'opendal:/'; path.value = root.value; inputPath.value = '/';
+    root.value = ROOT_URI; path.value = root.value; inputPath.value = '/';
     await refresh();
     const g = generation;
     const tick = async () => {
@@ -331,7 +313,7 @@ export function useManager(ask: Ask) {
     timer = setTimeout(tick, 1500);
   }
   onBeforeUnmount(() => { disposed = true; generation++; clearTimeout(timer); release(); });
-  return { path, inputPath, root, entries, cursor, selected, capabilities, busy, error, status, filter, order, tree, expanded, accessPath,
-    transfers, localTokens, openLocal, preview, content, dirty, rows, tableRows, initialize, navigate, refresh, more, toggleTree, open, closePreview, save, mkdir, mkdirAt, rename, remove, copy, copyTo, editTarget, transfer, cancel,
+  return { path, inputPath, root, entries, cursor, selected, capabilities, busy, error, status, can, canEdit, tree, expanded, accessPath,
+    transfers, localTokens, openLocal, preview, content, dirty, rows, tableRows, initialize, navigate, refresh, more, toggleTree, open, closePreview, save, mkdir, mkdirAt, rename, remove, copy, copyTo, transfer, cancel,
     up: () => navigate(parentUri(path.value)), terminal, listDirectories };
 }
