@@ -13,7 +13,7 @@ async function setup(connectionId = 'a', ask = vi.fn().mockResolvedValue(null), 
     const custom = handler?.(method, p);
     if (custom !== undefined) return custom;
     let value: any = {};
-    if (method.endsWith('/capabilities')) value = { read: true, write: true, list: true, mkdir: true, upload: true, download: true };
+    if (method.endsWith('/capabilities')) value = { read: true, write: true, list: true, mkdir: true, rename: true, delete: true, upload: true, download: true };
     if (method.endsWith('/list')) value = { entries: [{ name: 'edit.txt', kind: 'file', uri: 'ftp:/edit.txt' }], transfers: [] };
     if (method.endsWith('/preview')) value = { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes) };
     if (method.endsWith('/previewChunk')) value = { dataBase64: encode(bytes), nextOffset: bytes.length };
@@ -26,6 +26,65 @@ async function setup(connectionId = 'a', ask = vi.fn().mockResolvedValue(null), 
   return { manager, invoke, ask };
 }
 describe('file manager workflows', () => {
+  it('opens known paths without listing, reports unsupported operations, and blocks unsafe edits', async () => {
+    const bytes = new TextEncoder().encode('original');
+    const { manager: m, invoke, ask } = await setup('generic', undefined, method => {
+      if (method.endsWith('/capabilities')) return { ok: true, value: { list: false, read: true, download: true, service: 'http' } };
+      if (method.endsWith('/preview')) return { ok: true, value: { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes), editable: false } };
+    });
+    await m.initialize({ connectionId: 'generic', providerId: 'plugin.opendal', connectionType: 'opendal' });
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: '操作不支持' }));
+    m.inputPath.value = '/folder/中文.txt';
+    await m.accessPath('preview');
+    expect(m.preview.value?.entry.uri).toBe('opendal:/folder/%E4%B8%AD%E6%96%87.txt');
+    expect(m.content.value).toBe('original');
+    expect(invoke.mock.calls.some(([method]) => method.endsWith('/list'))).toBe(false);
+    m.content.value = 'changed'; await m.save();
+    expect(invoke.mock.calls.some(([method]) => method.endsWith('/stageText'))).toBe(false);
+    await m.mkdir();
+    expect(invoke.mock.calls.some(([method]) => method.endsWith('/createDirectory'))).toBe(false);
+    m.inputPath.value = 'http://outside/file'; await m.accessPath('preview');
+    expect(m.error.value).toContain('不要输入服务 URL');
+    m.inputPath.value = '/../secret'; await m.accessPath('preview');
+    expect(m.error.value).toContain('名称不能为空');
+  });
+  it('keeps partial text previews read-only even if save is called directly', async () => {
+    const bytes = new TextEncoder().encode('original');
+    const { manager: m, invoke } = await setup('a', undefined, method => {
+      if (method.endsWith('/preview')) return { ok: true, value: { token: 'snapshot', kind: 'text', size: bytes.length, digest: sha256(bytes), truncated: true } };
+    });
+    await m.open(m.rows.value[0]);
+    expect(m.preview.value?.truncated).toBe(true);
+    expect(m.content.value).toBe('original');
+    m.content.value = 'partial edit';
+    await m.save();
+    expect(invoke.mock.calls.some(([method]) => /\/(stageText|saveText)$/.test(method))).toBe(false);
+  });
+  it('expands files inline, paginates children and preserves expansion on refresh', async () => {
+    const directory = { name: 'folder', kind: 'directory', uri: 'ftp:/folder/' };
+    const file = { name: 'child.txt', kind: 'file', uri: 'ftp:/folder/child.txt' };
+    const { manager: m } = await setup('a', undefined, (method, p) => {
+      if (!method.endsWith('/list')) return;
+      return { ok: true, value: p.uri === 'ftp:/' ? { entries: [directory] } : p.cursor ? { entries: [{ ...file, name: 'next.txt', uri: 'ftp:/folder/next.txt' }] } : { entries: [file], nextCursor: 'page2' } };
+    });
+    await m.toggleTree(directory.uri);
+    expect(m.path.value).toBe('ftp:/');
+    expect(m.tableRows.value.map(r => [r.entry.name, r.depth, !!r.more])).toEqual([['folder', 0, false], ['child.txt', 1, false], ['folder', 1, true]]);
+    await m.toggleTree(directory.uri, true);
+    expect(m.tableRows.value.map(r => r.entry.name)).toEqual(['folder', 'child.txt', 'next.txt']);
+    await m.refresh(); expect(m.expanded.value.has(directory.uri)).toBe(true);
+    await m.toggleTree(directory.uri); expect(m.tableRows.value).toHaveLength(1);
+    await m.navigate(directory.uri); expect(m.expanded.value.size).toBe(0);
+  });
+  it('renames and copies an expanded child in its own parent directory', async () => {
+    const ask = vi.fn().mockResolvedValue('new.txt');
+    const { manager: m, invoke } = await setup('a', ask);
+    const child = { name: 'old.txt', kind: 'file', uri: 'ftp:/folder/old.txt' };
+    m.selected.value = child; await m.rename();
+    expect(invoke.mock.calls.find(([method]) => method.endsWith('/rename'))?.[1].targetUri).toBe('ftp:/folder/new.txt');
+    m.selected.value = child; m.capabilities.value.copy = true; await m.copy();
+    expect(invoke.mock.calls.find(([method]) => method.endsWith('/copy'))?.[1].targetUri).toBe('ftp:/folder/new.txt');
+  });
   it('loads a saved connection and navigates directories', async () => {
     const { manager: m, invoke } = await setup();
     expect(m.rows.value[0].name).toBe('edit.txt');

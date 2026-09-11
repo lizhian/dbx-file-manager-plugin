@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod generic;
 mod operations;
 mod session;
 mod transfer;
@@ -188,17 +189,30 @@ impl Plugin {
             .filter(|v| *v > 0)
             .unwrap_or(30)
             .clamp(1, 300);
-        tokio::time::timeout(Duration::from_secs(timeout), op.check())
-            .await
-            .map_err(|_| error("timeout", "Connection check timed out"))?
-            .map_err(remote)?;
+        let verified = if op.info().full_capability().list {
+            match tokio::time::timeout(Duration::from_secs(timeout), op.check())
+                .await
+                .map_err(|_| error("timeout", "Connection check timed out"))?
+            {
+                Ok(()) => true,
+                Err(e)
+                    if e.kind() == opendal::ErrorKind::Unsupported
+                        && request.protocol()? == "opendal" =>
+                {
+                    false
+                }
+                Err(e) => return Err(remote(e)),
+            }
+        } else {
+            false
+        };
         let mut session = Session::new(
             request.connection.id.clone(),
-            request.protocol()?.into(),
             op,
             request.connection.read_only,
         );
         session.fingerprint = request.fingerprint;
+        session.verified = verified;
         session.operation_timeout = request.query_timeout()?;
         session.idle_timeout = request.idle_timeout()?;
         session.generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -235,6 +249,14 @@ impl Plugin {
             return Err(error("unavailable", "Sidecar is shutting down"));
         }
         if method == "chooseLocal" {
+            operations::require(
+                &s,
+                if error::flag(&params, "upload", true)? {
+                    "upload"
+                } else {
+                    "download"
+                },
+            )?;
             return tokio::select! {
                 _ = s.closed.cancelled() => Err(error("not_connected", "Connection closed")),
                 result = self.workbench.choose(&s, &params) => result,
@@ -246,11 +268,35 @@ impl Plugin {
             p["localPath"] = json!(path);
             // The path is selected by a native dialog, never supplied by iframe JavaScript.
             if upload {
-                let path = uri::path(text(&p, "uri")?, &s.protocol)?;
+                let path = uri::path(text(&p, "uri")?, s.storage_scheme())?;
                 operations::destination(&s.operator, &path, error::flag(&p, "overwrite", false)?)
                     .await?;
             }
             return self.transfers.start(s, upload, &p, emitter);
+        }
+        if method == "openLocal" {
+            let (path, upload) = self.workbench.local(&s, &params)?;
+            if upload || !path.is_file() {
+                return Err(error(
+                    "unsupported",
+                    "Only selected download files can be opened",
+                ));
+            }
+            let reveal = error::flag(&params, "reveal", false)?;
+            let status = tokio::task::spawn_blocking(move || {
+                let mut command = std::process::Command::new("/usr/bin/open");
+                if reveal {
+                    command.arg("-R");
+                }
+                command.arg(path).status()
+            })
+            .await
+            .map_err(|_| error("io", "Cannot open downloaded file"))?
+            .map_err(|_| error("io", "Cannot open downloaded file"))?;
+            if !status.success() {
+                return Err(error("io", "Cannot open downloaded file"));
+            }
+            return Ok(json!({"success": true}));
         }
         if matches!(
             method,
@@ -279,7 +325,7 @@ impl Plugin {
             };
         }
         match method {
-            "capabilities" | "list" | "stat" | "createDirectory" | "delete" | "rename" => {
+            "capabilities" | "list" | "stat" | "createDirectory" | "delete" | "rename" | "copy" => {
                 self.dispatch(&format!("filesystem/{method}"), params, emitter)
                     .await
             }
@@ -397,7 +443,7 @@ impl Plugin {
                     .lock()
                     .unwrap()
                     .get(id)
-                    .is_some_and(|s| s.protocol != protocol)
+                    .is_some_and(|s| s.storage_scheme() != protocol)
             {
                 return Err(error("configuration", "Connection provider mismatch"));
             }
@@ -410,7 +456,7 @@ impl Plugin {
             if let Some(s) = current {
                 if s.fingerprint == request.fingerprint && !s.closed.is_cancelled() && !s.idle() {
                     *s.last_used.lock().unwrap() = std::time::Instant::now();
-                    return Ok(connection_result(&protocol));
+                    return Ok(connection_result(&s));
                 }
             }
             let full = {
@@ -424,6 +470,7 @@ impl Plugin {
             self.retire(id).await;
         }
         let session = self.build_session(&request).await?;
+        let result = connection_result(&session);
         if method == "connection/connect" {
             let id = id.clone();
             self.descriptors
@@ -432,13 +479,16 @@ impl Plugin {
                 .insert(id.clone(), Arc::new(request));
             self.sessions.lock().unwrap().insert(id, session);
         }
-        Ok(connection_result(&protocol))
+        Ok(result)
     }
 }
 
-fn connection_result(protocol: &str) -> Value {
-    let mut result = json!({"success": true});
-    if protocol == "sftp" {
+fn connection_result(session: &Session) -> Value {
+    let mut result = json!({"success": true, "verification": if session.verified { "verified" } else { "configuration_only" }});
+    if !session.verified {
+        result["warnings"] = json!(["配置已构建；此服务不能通过目录列表探测，尚未验证远端可访问性。请使用已知路径验证读取。"]);
+    }
+    if session.storage_scheme() == "ssh" {
         result["warnings"] = json!(["SFTP uses system OpenSSH and the Accept known-host strategy: new host keys are trusted on first use. Independently verify host keys before production use. Password authentication is unsupported; private_key is an absolute key-file path."]);
     }
     result
@@ -471,5 +521,7 @@ impl PluginHandler for Handler {
     }
 }
 
+#[cfg(test)]
+mod generic_tests;
 #[cfg(test)]
 mod tests;

@@ -1,0 +1,469 @@
+{
+  "opendalVersion": "0.57.0",
+  "target": "aarch64-apple-darwin",
+  "source": "https://opendal.apache.org/services/",
+  "services": [
+    {
+      "id": "aliyun-drive",
+      "scheme": "aliyun-drive",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/aliyun-drive/"
+    },
+    {
+      "id": "alluxio",
+      "scheme": "alluxio",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/alluxio/"
+    },
+    {
+      "id": "azblob",
+      "scheme": "azblob",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/azblob/"
+    },
+    {
+      "id": "azdls",
+      "scheme": "azdls",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/azdls/"
+    },
+    {
+      "id": "azfile",
+      "scheme": "azfile",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/azfile/"
+    },
+    {
+      "id": "b2",
+      "scheme": "b2",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/b2/"
+    },
+    {
+      "id": "cacache",
+      "scheme": "cacache",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/cacache/"
+    },
+    {
+      "id": "cloudflare-kv",
+      "scheme": "cloudflare-kv",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/cloudflare-kv/"
+    },
+    {
+      "id": "compfs",
+      "scheme": "compfs",
+      "status": "platform",
+      "reason": "需要 Linux io_uring",
+      "reference": "https://opendal.apache.org/services/compfs/"
+    },
+    {
+      "id": "cos",
+      "scheme": "cos",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/cos/"
+    },
+    {
+      "id": "d1",
+      "scheme": "d1",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/d1/"
+    },
+    {
+      "id": "dashmap",
+      "scheme": "dashmap",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/dashmap/"
+    },
+    {
+      "id": "dbfs",
+      "scheme": "dbfs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/dbfs/"
+    },
+    {
+      "id": "dropbox",
+      "scheme": "dropbox",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/dropbox/"
+    },
+    {
+      "id": "etcd",
+      "scheme": "etcd",
+      "status": "dependency",
+      "reason": "未包含 Protobuf 编译器",
+      "reference": "https://opendal.apache.org/services/etcd/"
+    },
+    {
+      "id": "foundationdb",
+      "scheme": "foundationdb",
+      "status": "dependency",
+      "reason": "未包含 FoundationDB 客户端原生库",
+      "reference": "https://opendal.apache.org/services/foundationdb/"
+    },
+    {
+      "id": "foyer",
+      "scheme": "foyer",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/foyer/"
+    },
+    {
+      "id": "fs",
+      "scheme": "fs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/fs/"
+    },
+    {
+      "id": "ftp",
+      "scheme": "ftp",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/ftp/"
+    },
+    {
+      "id": "gcs",
+      "scheme": "gcs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/gcs/"
+    },
+    {
+      "id": "gcs-grpc",
+      "scheme": "gcs-grpc",
+      "status": "version",
+      "reason": "OpenDAL 0.57 未提供该服务",
+      "reference": "https://opendal.apache.org/services/gcs-grpc/"
+    },
+    {
+      "id": "gdrive",
+      "scheme": "gdrive",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/gdrive/"
+    },
+    {
+      "id": "ghac",
+      "scheme": "ghac",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/ghac/"
+    },
+    {
+      "id": "github",
+      "scheme": "github",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/github/"
+    },
+    {
+      "id": "goosefs",
+      "scheme": "goosefs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/goosefs/"
+    },
+    {
+      "id": "gridfs",
+      "scheme": "gridfs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/gridfs/"
+    },
+    {
+      "id": "hdfs",
+      "scheme": "hdfs",
+      "status": "dependency",
+      "reason": "未包含 JVM 与 libhdfs；可使用 hdfs-native",
+      "reference": "https://opendal.apache.org/services/hdfs/"
+    },
+    {
+      "id": "hdfs-native",
+      "scheme": "hdfs-native",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/hdfs-native/"
+    },
+    {
+      "id": "hf",
+      "scheme": "hf",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/hf/"
+    },
+    {
+      "id": "http",
+      "scheme": "http",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/http/"
+    },
+    {
+      "id": "ipfs",
+      "scheme": "ipfs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/ipfs/"
+    },
+    {
+      "id": "ipmfs",
+      "scheme": "ipmfs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/ipmfs/"
+    },
+    {
+      "id": "koofr",
+      "scheme": "koofr",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/koofr/"
+    },
+    {
+      "id": "lakefs",
+      "scheme": "lakefs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/lakefs/"
+    },
+    {
+      "id": "memcached",
+      "scheme": "memcached",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/memcached/"
+    },
+    {
+      "id": "memory",
+      "scheme": "memory",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/memory/"
+    },
+    {
+      "id": "mini-moka",
+      "scheme": "mini-moka",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/mini-moka/"
+    },
+    {
+      "id": "moka",
+      "scheme": "moka",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/moka/"
+    },
+    {
+      "id": "mongodb",
+      "scheme": "mongodb",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/mongodb/"
+    },
+    {
+      "id": "monoiofs",
+      "scheme": "monoiofs",
+      "status": "platform",
+      "reason": "需要 Linux io_uring",
+      "reference": "https://opendal.apache.org/services/monoiofs/"
+    },
+    {
+      "id": "mysql",
+      "scheme": "mysql",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/mysql/"
+    },
+    {
+      "id": "obs",
+      "scheme": "obs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/obs/"
+    },
+    {
+      "id": "onedrive",
+      "scheme": "onedrive",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/onedrive/"
+    },
+    {
+      "id": "opfs",
+      "scheme": "opfs",
+      "status": "platform",
+      "reason": "需要浏览器 WASM 运行环境",
+      "reference": "https://opendal.apache.org/services/opfs/"
+    },
+    {
+      "id": "oss",
+      "scheme": "oss",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/oss/"
+    },
+    {
+      "id": "pcloud",
+      "scheme": "pcloud",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/pcloud/"
+    },
+    {
+      "id": "persy",
+      "scheme": "persy",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/persy/"
+    },
+    {
+      "id": "postgresql",
+      "scheme": "postgresql",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/postgresql/"
+    },
+    {
+      "id": "redb",
+      "scheme": "redb",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/redb/"
+    },
+    {
+      "id": "redis",
+      "scheme": "redis",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/redis/"
+    },
+    {
+      "id": "rocksdb",
+      "scheme": "rocksdb",
+      "status": "dependency",
+      "reason": "未包含 RocksDB 原生构建依赖",
+      "reference": "https://opendal.apache.org/services/rocksdb/"
+    },
+    {
+      "id": "s3",
+      "scheme": "s3",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/s3/"
+    },
+    {
+      "id": "seafile",
+      "scheme": "seafile",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/seafile/"
+    },
+    {
+      "id": "sftp",
+      "scheme": "sftp",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/sftp/"
+    },
+    {
+      "id": "sled",
+      "scheme": "sled",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/sled/"
+    },
+    {
+      "id": "sqlite",
+      "scheme": "sqlite",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/sqlite/"
+    },
+    {
+      "id": "surrealdb",
+      "scheme": "surrealdb",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/surrealdb/"
+    },
+    {
+      "id": "swift",
+      "scheme": "swift",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/swift/"
+    },
+    {
+      "id": "tikv",
+      "scheme": "tikv",
+      "status": "dependency",
+      "reason": "未包含 TiKV gRPC 原生构建依赖",
+      "reference": "https://opendal.apache.org/services/tikv/"
+    },
+    {
+      "id": "tos",
+      "scheme": "tos",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/tos/"
+    },
+    {
+      "id": "upyun",
+      "scheme": "upyun",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/upyun/"
+    },
+    {
+      "id": "vercel-artifacts",
+      "scheme": "vercel-artifacts",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/vercel-artifacts/"
+    },
+    {
+      "id": "vercel-blob",
+      "scheme": "vercel-blob",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/vercel-blob/"
+    },
+    {
+      "id": "webdav",
+      "scheme": "webdav",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/webdav/"
+    },
+    {
+      "id": "webhdfs",
+      "scheme": "webhdfs",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/webhdfs/"
+    },
+    {
+      "id": "yandex-disk",
+      "scheme": "yandex-disk",
+      "status": "compiled",
+      "reason": "",
+      "reference": "https://opendal.apache.org/services/yandex-disk/"
+    }
+  ]
+}

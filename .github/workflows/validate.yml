@@ -21,6 +21,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run validate
       - run: npm test
+      - run: npm run test:mock-host
       - run: npm run build
       - run: bash -n docs/tests/setup.sh
       - run: docker compose -f docs/tests/compose.yaml config --quiet

@@ -4,15 +4,29 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:standalone": "node devtools/file-manager.mjs",
+    "test:mock-host": "node --test devtools/mock-host/tests/*.test.mjs",
     "build": "vue-tsc --noEmit && vite build",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/generic-connection.test.mjs",
     "validate": "node scripts/validate-manifest.mjs",
     "package": "npm run build && npm run validate && node scripts/package.mjs"
   },
   "dependencies": {
-    "vue": "^3.5.21",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.4",
+    "@codemirror/view": "^6.43.11",
+    "highlight.js": "^11.12.0",
+    "js-sha256": "^0.11.1",
     "lucide-vue-next": "^0.468.0",
-    "js-sha256": "^0.11.1"
+    "vue": "^3.5.21"
   },
   "optionalDependencies": {
     "@dbx-app/plugin-cli-darwin-arm64": "0.1.0"
@@ -24,6 +38,7 @@
     "ajv": "^8.17.1",
     "daisyui": "^5.1.10",
     "jsdom": "^26.1.0",
+    "semver": "^7.7.2",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vite": "^6.1.0",

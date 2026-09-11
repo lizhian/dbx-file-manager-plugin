@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import Ajv from 'ajv/dist/2020.js';
+import { execFileSync } from 'node:child_process';
+execFileSync(process.execPath, [new URL('./services.mjs', import.meta.url).pathname, '--check'], { stdio: 'inherit' });
 const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url)));
 const schema = JSON.parse(await readFile(new URL('../tests/schema/manifest.schema.json', import.meta.url)));
 const validate = new Ajv({ allErrors: true, strict: false }).compile(schema);

@@ -18,7 +18,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Notify, Semaphore},
 };
-use tokio_util::{compat::FuturesAsyncReadCompatExt, sync::CancellationToken};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const MAX_TASKS: usize = 512;
@@ -144,7 +144,8 @@ impl Transfers {
         if upload {
             session.writable()?;
         }
-        let path = uri::path(text(p, "uri")?, &session.protocol)?;
+        operations::require(&session, if upload { "upload" } else { "download" })?;
+        let path = uri::path(text(p, "uri")?, session.storage_scheme())?;
         uri::non_root(&path)?;
         let path = path.trim_end_matches('/').to_string();
         let local = absolute_local_path(text(p, "localPath")?)?;
@@ -155,10 +156,10 @@ impl Transfers {
         let task = Arc::new(Task {
             snapshot: Mutex::new(Snapshot {
                 transfer_id: id.clone(),
-                provider_id: session.provider_id.clone(),
+                provider_id: format!("{}.files", crate::PLUGIN_ID),
                 connection_id: session.id.clone(),
                 direction: if upload { "upload" } else { "download" }.into(),
-                uri: uri::uri(&session.protocol, &path),
+                uri: uri::uri(session.storage_scheme(), &path),
                 state: "queued".into(),
                 bytes_transferred: 0,
                 total_bytes: None,
@@ -400,7 +401,7 @@ async fn upload_file(
     let temporary = format!("{parent}dbx-upload-{}.tmp", task.snapshot().transfer_id);
     let cap = s.operator.info().full_capability();
     let mut builder = s.operator.writer_with(&temporary);
-    if cap.write_can_append && (s.protocol == "ftp" || !cap.write_can_multi) {
+    if cap.write_can_append && (s.storage_scheme() == "ftp" || !cap.write_can_multi) {
         builder = builder.append(true);
         if !cap.write_can_multi {
             builder = builder.chunk(operations::APPEND_CHUNK_SIZE);
@@ -483,7 +484,7 @@ async fn upload_file(
     }
     .await;
     if result.is_err() {
-        if s.protocol == "ftp" {
+        if s.storage_scheme() == "ftp" {
             // FTP abort is unsupported. Finish its data stream before returning the pooled control connection.
             let _ = tokio::time::timeout(CLEANUP_TIMEOUT, writer.close()).await;
         } else {
@@ -574,15 +575,11 @@ async fn download_file(
     overwrite: bool,
     temporary_directory: Option<&Path>,
 ) -> Result<()> {
-    let metadata = control.run(operations::stat(&s.operator, path)).await??;
-    if !metadata.is_file() {
-        return Err(error(
-            "unsupported",
-            "Download source must be a regular file",
-        ));
-    }
-    let total = metadata.content_length();
-    task.progress(0, Some(total));
+    let metadata = control
+        .run(operations::file_metadata(&s.operator, path))
+        .await??;
+    let total = metadata.map(|m| m.content_length());
+    task.progress(0, total);
     match std::fs::symlink_metadata(local) {
         Ok(m) => {
             if !overwrite {
@@ -613,15 +610,7 @@ async fn download_file(
         .map_err(|_| error("local_write", "Cannot open download temporary file"))?;
     let mut output = tokio::fs::File::from_std(file);
     let result: Result<()> = async {
-        let reader = control
-            .run(s.operator.reader(path))
-            .await?
-            .map_err(remote)?;
-        let mut reader = control
-            .run(reader.into_futures_async_read(..))
-            .await?
-            .map_err(remote)?
-            .compat();
+        let mut reader = control.run(operations::reader(&s.operator, path)).await??;
         let mut buffer = vec![0; BUFFER_SIZE];
         let mut bytes = 0u64;
         loop {
@@ -632,7 +621,7 @@ async fn download_file(
             if n == 0 {
                 break;
             }
-            if bytes + n as u64 > total {
+            if total.is_some_and(|total| bytes + n as u64 > total) {
                 return Err(error(
                     "source_changed",
                     "Remote source grew during download",
@@ -643,7 +632,7 @@ async fn download_file(
                 .await
                 .map_err(|_| error("local_write", "Cannot write download data"))?;
             bytes += n as u64;
-            task.progress(bytes, Some(total));
+            task.progress(bytes, total);
         }
         output
             .flush()
@@ -653,7 +642,7 @@ async fn download_file(
             .sync_all()
             .await
             .map_err(|_| error("local_write", "Cannot synchronize download data"))?;
-        if bytes != total {
+        if total.is_some_and(|total| bytes != total) {
             return Err(error(
                 "source_changed",
                 "Remote source changed size during download",

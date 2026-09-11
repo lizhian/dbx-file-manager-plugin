@@ -14,7 +14,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::io::AsyncReadExt;
-use tokio_util::compat::FuturesAsyncReadCompatExt;
 use uuid::Uuid;
 
 const TEXT_LIMIT: usize = 2 * 1024 * 1024;
@@ -29,6 +28,7 @@ struct Snapshot {
     bytes: Vec<u8>,
     draft: Vec<u8>,
     kind: &'static str,
+    truncated: bool,
     mime: &'static str,
     touched: Instant,
 }
@@ -65,22 +65,12 @@ fn image_mime(bytes: &[u8]) -> Option<&'static str> {
 }
 
 async fn bounded_read(s: &Session, path: &str, max: usize) -> Result<Vec<u8>> {
-    let metadata = operations::stat(&s.operator, path).await?;
-    if !metadata.is_file() {
-        return Err(error("unsupported", "Only regular files can be previewed"));
-    }
-    if metadata.content_length() > max as u64 {
+    let metadata = operations::file_metadata(&s.operator, path).await?;
+    if metadata.is_some_and(|m| m.content_length() > max as u64) {
         return Err(error("too_large", "File exceeds the preview limit"));
     }
-    let mut reader = s
-        .operator
-        .reader(path)
-        .await
-        .map_err(remote)?
-        .into_futures_async_read(..)
-        .await
-        .map_err(remote)?
-        .compat()
+    let mut reader = operations::reader(&s.operator, path)
+        .await?
         .take(max as u64 + 1);
     let mut bytes = Vec::new();
     reader
@@ -91,6 +81,56 @@ async fn bounded_read(s: &Session, path: &str, max: usize) -> Result<Vec<u8>> {
         return Err(error("too_large", "File exceeds the preview limit"));
     }
     Ok(bytes)
+}
+
+async fn preview_read(s: &Session, path: &str) -> Result<(Vec<u8>, bool, bool)> {
+    let metadata = operations::file_metadata(&s.operator, path).await?;
+    let mut reader = operations::reader(&s.operator, path).await?;
+    let mut bytes = Vec::new();
+    let mut lines = 0;
+    let mut line_end = None;
+    let mut truncated = metadata.is_some_and(|m| m.content_length() > TEXT_LIMIT as u64);
+    loop {
+        let mut chunk = [0u8; 16 * 1024];
+        let count = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|_| error("backend", "Could not read preview"))?;
+        if count == 0 {
+            break;
+        }
+        let start = bytes.len();
+        bytes.extend_from_slice(&chunk[..count]);
+        if image_mime(&bytes).is_some() {
+            return Ok((bounded_read(s, path, IMAGE_LIMIT).await?, false, false));
+        }
+        for (offset, byte) in chunk[..count].iter().enumerate() {
+            if *byte == b'\n' {
+                lines += 1;
+                if lines == 1000 {
+                    line_end = Some(start + offset + 1);
+                }
+            }
+        }
+        truncated |= bytes.len() > TEXT_LIMIT;
+        if truncated {
+            if let Some(end) = line_end {
+                bytes.truncate(end);
+                break;
+            }
+        }
+        if bytes.len() >= IMAGE_LIMIT {
+            bytes.truncate(IMAGE_LIMIT);
+            // A byte limit may split the final UTF-8 character.
+            if let Err(e) = std::str::from_utf8(&bytes) {
+                if e.error_len().is_none() {
+                    bytes.truncate(e.valid_up_to());
+                }
+            }
+            return Ok((bytes, true, true));
+        }
+    }
+    Ok((bytes, truncated, false))
 }
 
 impl State {
@@ -149,15 +189,13 @@ impl State {
 
     pub async fn remote(&self, s: &Session, method: &str, p: &Value) -> Result<Value> {
         if method == "preview" {
+            operations::require(s, "read")?;
             let location = text(p, "uri")?;
-            let path = uri::path(location, &s.protocol)?;
-            let bytes = bounded_read(s, &path, IMAGE_LIMIT).await?;
+            let path = uri::path(location, s.storage_scheme())?;
+            let (bytes, truncated, byte_limited) = preview_read(s, &path).await?;
             let (kind, mime) = if let Some(mime) = image_mime(&bytes) {
                 ("image", mime)
             } else {
-                if bytes.len() > TEXT_LIMIT {
-                    return Err(error("too_large", "Text preview is limited to 2 MiB"));
-                }
                 let decoded = std::str::from_utf8(&bytes)
                     .map_err(|_| error("unsupported", "Not UTF-8 text or a supported image"))?;
                 if decoded
@@ -169,7 +207,7 @@ impl State {
                 ("text", "text/plain")
             };
             let token = Uuid::new_v4().to_string();
-            let result = json!({"token": token, "kind": kind, "mime": mime, "size": bytes.len(), "digest": digest(&bytes)});
+            let result = json!({"token": token, "kind": kind, "mime": mime, "size": bytes.len(), "digest": digest(&bytes), "truncated": truncated, "byteLimited": byte_limited, "editable": kind == "text" && !truncated && operations::capabilities(s)["edit"] == true});
             let mut previews = self.previews.lock().unwrap();
             previews.retain(|_, v| v.touched.elapsed() < TTL);
             let total: usize = previews
@@ -191,6 +229,7 @@ impl State {
                     bytes,
                     draft: Vec::new(),
                     kind,
+                    truncated,
                     mime,
                     touched: Instant::now(),
                 },
@@ -227,6 +266,10 @@ impl State {
                 }
                 "stageText" => {
                     s.writable()?;
+                    operations::require(s, "edit")?;
+                    if v.truncated {
+                        return Err(error("unsupported", "Partial previews are read-only"));
+                    }
                     if v.kind != "text" {
                         return Err(error("unsupported", "Images cannot be edited"));
                     }
@@ -258,6 +301,10 @@ impl State {
                 }
                 "saveText" => {
                     s.writable()?;
+                    operations::require(s, "edit")?;
+                    if v.truncated {
+                        return Err(error("unsupported", "Partial previews are read-only"));
+                    }
                     if v.kind != "text" {
                         return Err(error("unsupported", "Images cannot be edited"));
                     }
@@ -275,7 +322,7 @@ impl State {
             }
         };
         let _mutation = s.mutations.lock().await;
-        let path = uri::path(&commit.0, &s.protocol)?;
+        let path = uri::path(&commit.0, s.storage_scheme())?;
         let force = flag(p, "force", false)?;
         let before = operations::stat(&s.operator, &path).await?;
         if !before.is_file() {
@@ -301,7 +348,7 @@ impl State {
                 remote(e)
             }
         })?;
-        if commit.2.is_empty() && s.protocol == "ftp" {
+        if commit.2.is_empty() && s.storage_scheme() == "ftp" {
             operations::write_empty_file(&s.operator, &path).await?;
         }
         let hash = digest(&commit.2);

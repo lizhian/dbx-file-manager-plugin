@@ -23,7 +23,7 @@ pub struct Cursor {
 
 pub struct Session {
     pub id: String,
-    pub protocol: String,
+    pub verified: bool,
     pub provider_id: String,
     pub operator: Operator,
     pub read_only: bool,
@@ -42,11 +42,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(id: String, protocol: String, operator: Operator, read_only: bool) -> Self {
+    pub fn new(id: String, operator: Operator, read_only: bool) -> Self {
         Self {
-            provider_id: format!("{PLUGIN_ID}.{protocol}.files"),
             id,
-            protocol,
+            provider_id: format!("{PLUGIN_ID}.files"),
+            verified: false,
             operator,
             read_only,
             closed: CancellationToken::new(),
@@ -62,6 +62,10 @@ impl Session {
             active: AtomicUsize::new(0),
             drained: Notify::new(),
         }
+    }
+
+    pub fn storage_scheme(&self) -> &str {
+        self.operator.info().scheme()
     }
     pub fn available(&self) -> Result<()> {
         if self.closed.is_cancelled() {

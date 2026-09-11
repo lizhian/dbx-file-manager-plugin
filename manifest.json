@@ -5,7 +5,7 @@
   "name": "OpenDAL File Manager",
   "version": "0.2.0",
   "publisher": "lizhian",
-  "description": "六协议文件管理：目录浏览、文件传输、图片预览和文本编辑。",
+  "description": "OpenDAL 文件管理：通用服务配置、目录浏览、文件传输、图片预览和文本编辑。",
   "icon": "assets/plugin.svg",
   "engines": {
     "dbx": ">=0.5.68",
@@ -476,12 +476,318 @@
       "type": "workbench",
       "id": "io.github.lizhian.file-manager.main",
       "label": "文件管理"
+    },
+    {
+      "type": "connection-provider",
+      "id": "io.github.lizhian.file-manager.opendal",
+      "label": "OpenDAL 通用",
+      "icon": "assets/plugin.svg",
+      "database_type": "opendal",
+      "description": "按 OpenDAL Configuration reference 配置服务。参数交由 Secret Store；当前宿主和模拟服务均明文存储，仅使用测试凭据。",
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
+      "fields": [
+        {
+          "key": "display_name",
+          "label": "连接名称",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "OpenDAL"
+        },
+        {
+          "key": "service",
+          "label": "服务",
+          "type": "select",
+          "binding": "secret",
+          "required": true,
+          "options": [
+            {
+              "value": "aliyun-drive",
+              "label": "aliyun-drive（已编译）"
+            },
+            {
+              "value": "alluxio",
+              "label": "alluxio（已编译）"
+            },
+            {
+              "value": "azblob",
+              "label": "azblob（已编译）"
+            },
+            {
+              "value": "azdls",
+              "label": "azdls（已编译）"
+            },
+            {
+              "value": "azfile",
+              "label": "azfile（已编译）"
+            },
+            {
+              "value": "b2",
+              "label": "b2（已编译）"
+            },
+            {
+              "value": "cacache",
+              "label": "cacache（已编译）"
+            },
+            {
+              "value": "cloudflare-kv",
+              "label": "cloudflare-kv（已编译）"
+            },
+            {
+              "value": "compfs",
+              "label": "compfs（当前平台不支持：需要 Linux io_uring）"
+            },
+            {
+              "value": "cos",
+              "label": "cos（已编译）"
+            },
+            {
+              "value": "d1",
+              "label": "d1（已编译）"
+            },
+            {
+              "value": "dashmap",
+              "label": "dashmap（已编译）"
+            },
+            {
+              "value": "dbfs",
+              "label": "dbfs（已编译）"
+            },
+            {
+              "value": "dropbox",
+              "label": "dropbox（已编译）"
+            },
+            {
+              "value": "etcd",
+              "label": "etcd（依赖未包含：未包含 Protobuf 编译器）"
+            },
+            {
+              "value": "foundationdb",
+              "label": "foundationdb（依赖未包含：未包含 FoundationDB 客户端原生库）"
+            },
+            {
+              "value": "foyer",
+              "label": "foyer（已编译）"
+            },
+            {
+              "value": "fs",
+              "label": "fs（已编译）"
+            },
+            {
+              "value": "ftp",
+              "label": "ftp（已编译）"
+            },
+            {
+              "value": "gcs",
+              "label": "gcs（已编译）"
+            },
+            {
+              "value": "gcs-grpc",
+              "label": "gcs-grpc（当前版本未提供：OpenDAL 0.57 未提供该服务）"
+            },
+            {
+              "value": "gdrive",
+              "label": "gdrive（已编译）"
+            },
+            {
+              "value": "ghac",
+              "label": "ghac（已编译）"
+            },
+            {
+              "value": "github",
+              "label": "github（已编译）"
+            },
+            {
+              "value": "goosefs",
+              "label": "goosefs（已编译）"
+            },
+            {
+              "value": "gridfs",
+              "label": "gridfs（已编译）"
+            },
+            {
+              "value": "hdfs",
+              "label": "hdfs（依赖未包含：未包含 JVM 与 libhdfs；可使用 hdfs-native）"
+            },
+            {
+              "value": "hdfs-native",
+              "label": "hdfs-native（已编译）"
+            },
+            {
+              "value": "hf",
+              "label": "hf（已编译）"
+            },
+            {
+              "value": "http",
+              "label": "http（已编译）"
+            },
+            {
+              "value": "ipfs",
+              "label": "ipfs（已编译）"
+            },
+            {
+              "value": "ipmfs",
+              "label": "ipmfs（已编译）"
+            },
+            {
+              "value": "koofr",
+              "label": "koofr（已编译）"
+            },
+            {
+              "value": "lakefs",
+              "label": "lakefs（已编译）"
+            },
+            {
+              "value": "memcached",
+              "label": "memcached（已编译）"
+            },
+            {
+              "value": "memory",
+              "label": "memory（已编译）"
+            },
+            {
+              "value": "mini-moka",
+              "label": "mini-moka（已编译）"
+            },
+            {
+              "value": "moka",
+              "label": "moka（已编译）"
+            },
+            {
+              "value": "mongodb",
+              "label": "mongodb（已编译）"
+            },
+            {
+              "value": "monoiofs",
+              "label": "monoiofs（当前平台不支持：需要 Linux io_uring）"
+            },
+            {
+              "value": "mysql",
+              "label": "mysql（已编译）"
+            },
+            {
+              "value": "obs",
+              "label": "obs（已编译）"
+            },
+            {
+              "value": "onedrive",
+              "label": "onedrive（已编译）"
+            },
+            {
+              "value": "opfs",
+              "label": "opfs（当前平台不支持：需要浏览器 WASM 运行环境）"
+            },
+            {
+              "value": "oss",
+              "label": "oss（已编译）"
+            },
+            {
+              "value": "pcloud",
+              "label": "pcloud（已编译）"
+            },
+            {
+              "value": "persy",
+              "label": "persy（已编译）"
+            },
+            {
+              "value": "postgresql",
+              "label": "postgresql（已编译）"
+            },
+            {
+              "value": "redb",
+              "label": "redb（已编译）"
+            },
+            {
+              "value": "redis",
+              "label": "redis（已编译）"
+            },
+            {
+              "value": "rocksdb",
+              "label": "rocksdb（依赖未包含：未包含 RocksDB 原生构建依赖）"
+            },
+            {
+              "value": "s3",
+              "label": "s3（已编译）"
+            },
+            {
+              "value": "seafile",
+              "label": "seafile（已编译）"
+            },
+            {
+              "value": "sftp",
+              "label": "sftp（已编译）"
+            },
+            {
+              "value": "sled",
+              "label": "sled（已编译）"
+            },
+            {
+              "value": "sqlite",
+              "label": "sqlite（已编译）"
+            },
+            {
+              "value": "surrealdb",
+              "label": "surrealdb（已编译）"
+            },
+            {
+              "value": "swift",
+              "label": "swift（已编译）"
+            },
+            {
+              "value": "tikv",
+              "label": "tikv（依赖未包含：未包含 TiKV gRPC 原生构建依赖）"
+            },
+            {
+              "value": "tos",
+              "label": "tos（已编译）"
+            },
+            {
+              "value": "upyun",
+              "label": "upyun（已编译）"
+            },
+            {
+              "value": "vercel-artifacts",
+              "label": "vercel-artifacts（已编译）"
+            },
+            {
+              "value": "vercel-blob",
+              "label": "vercel-blob（已编译）"
+            },
+            {
+              "value": "webdav",
+              "label": "webdav（已编译）"
+            },
+            {
+              "value": "webhdfs",
+              "label": "webhdfs（已编译）"
+            },
+            {
+              "value": "yandex-disk",
+              "label": "yandex-disk（已编译）"
+            }
+          ]
+        },
+        {
+          "key": "parameters",
+          "label": "参数",
+          "type": "textarea",
+          "binding": "secret",
+          "required": false,
+          "placeholder": "key1=value1\nkey2=value2",
+          "description": "每行 key=value，按第一个 = 分隔，值中的空格保留。配置参考：https://opendal.apache.org/services/；不要添加引号或变量表达式。当前宿主及模拟服务明文存储，仅使用测试凭据。"
+        }
+      ],
+      "workbench": "io.github.lizhian.file-manager.main"
     }
   ],
   "localizations": {
     "zh-CN": {
       "name": "OpenDAL 文件管理器",
-      "description": "六协议文件管理：目录浏览、上传下载、图片预览与文本编辑。兼容官方 Host API 1.0。",
+      "description": "OpenDAL 文件管理：通用服务配置、目录浏览、上传下载、图片预览与文本编辑。兼容官方 Host API 1.0。",
       "contributions": {
         "io.github.lizhian.file-manager.ftp": {
           "label": "FTP",

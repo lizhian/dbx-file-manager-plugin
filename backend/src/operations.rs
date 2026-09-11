@@ -21,11 +21,13 @@ pub fn capabilities(s: &Session) -> Value {
     let c = s.operator.info().full_capability();
     let writable = !s.read_only;
     let mut result = json!({"list": c.list, "read": c.read, "stat": c.stat,
-        "write": writable && c.write, "mkdir": writable && c.create_dir,
-        "delete": writable && c.delete,
-        "copy": writable && (c.copy || (c.read && c.write)),
-        "rename": writable && (c.rename || ((c.copy || (c.read && c.write)) && c.delete)),
-        "upload": writable && c.write, "download": c.read,
+        "write": writable && c.write && c.stat, "mkdir": writable && c.create_dir && c.stat,
+        "delete": writable && c.delete && c.stat,
+        "copy": writable && c.stat && (c.copy || (c.read && c.write)),
+        "rename": writable && c.stat && (c.rename || ((c.copy || (c.read && c.write)) && c.delete)),
+        "upload": writable && c.stat && c.write && c.delete && (c.rename || c.copy || c.read), "download": c.read,
+        "edit": writable && c.stat && c.read && c.write,
+        "service": s.storage_scheme(), "verification": if s.verified { "verified" } else { "configuration_only" },
         "recursiveDelete": false, "recursiveCopy": false, "atomicRename": false, "atomicNoClobber": false,
         "nativeCopy": c.copy, "nativeRename": c.rename,
         "copyMode": if c.copy { "native" } else { "stream" },
@@ -37,12 +39,64 @@ pub fn capabilities(s: &Session) -> Value {
     .into_iter()
     .filter(|key| result[*key] == true)
     .collect::<Vec<_>>());
+    if false {
+        if let Ok(service) = crate::generic::service(&s.storage_scheme()) {
+            result["configurationReference"] = json!(service.reference);
+        }
+    }
     result
+}
+
+pub fn require(s: &Session, capability: &str) -> Result<()> {
+    if matches!(
+        capability,
+        "write" | "mkdir" | "delete" | "copy" | "rename" | "upload" | "edit"
+    ) {
+        s.writable()?;
+    }
+    if capabilities(s)[capability] != true {
+        return Err(error(
+            "unsupported",
+            &format!(
+                "{} does not support {capability} with the required file-management guarantees",
+                s.storage_scheme()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+pub async fn file_metadata(op: &Operator, path: &str) -> Result<Option<Metadata>> {
+    if !op.info().full_capability().stat {
+        uri::non_root(path)?;
+        if path.ends_with('/') {
+            return Err(error("unsupported", "A file path is required"));
+        }
+        return Ok(None);
+    }
+    let metadata = stat(op, path).await?;
+    if !metadata.is_file() {
+        return Err(error("unsupported", "Only regular files can be read"));
+    }
+    Ok(Some(metadata))
+}
+
+// Unlike the seekable adapter, this stream does not issue a hidden stat request.
+pub async fn reader(op: &Operator, path: &str) -> Result<impl tokio::io::AsyncRead + Unpin> {
+    Ok(op
+        .reader(path)
+        .await
+        .map_err(remote)?
+        .into_bytes_stream(..)
+        .await
+        .map_err(remote)?
+        .into_async_read()
+        .compat())
 }
 
 pub fn entry(s: &Session, path: &str, m: &Metadata) -> Value {
     let mut result = json!({"name": path.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("/"),
-        "uri": uri::uri(&s.protocol, path),
+        "uri": uri::uri(s.storage_scheme(), path),
         "kind": if m.is_dir() { "directory" } else if m.is_file() { "file" } else { "other" }});
     if m.is_file() {
         result["size"] = json!(m.content_length());
@@ -116,6 +170,11 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if method == "filesystem/capabilities" {
         return Ok(capabilities(s));
     }
+    let capability = match method {
+        "filesystem/createDirectory" => "mkdir",
+        other => other.strip_prefix("filesystem/").unwrap_or(other),
+    };
+    require(s, capability)?;
     let mutating = matches!(
         method,
         "filesystem/write"
@@ -133,7 +192,7 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if matches!(method, "filesystem/copy" | "filesystem/rename") {
         return move_or_copy(s, method, p).await;
     }
-    let path = uri::path(text(p, "uri")?, &s.protocol)?;
+    let path = uri::path(text(p, "uri")?, s.storage_scheme())?;
     let op = &s.operator;
     match method {
         "filesystem/stat" => {
@@ -147,19 +206,8 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
         "filesystem/list" => list(s, &path, p).await,
         "filesystem/read" => {
             let max = number(p, "maxBytes", 256 * 1024, INLINE_LIMIT)?;
-            let m = stat(op, &path).await?;
-            if !m.is_file() {
-                return Err(error("unsupported", "Only regular files can be read"));
-            }
-            let mut reader = op
-                .reader(&path)
-                .await
-                .map_err(remote)?
-                .into_futures_async_read(..)
-                .await
-                .map_err(remote)?
-                .compat()
-                .take(max + 1);
+            let m = file_metadata(op, &path).await?;
+            let mut reader = reader(op, &path).await?.take(max + 1);
             let mut bytes = Vec::new();
             reader
                 .read_to_end(&mut bytes)
@@ -168,7 +216,7 @@ pub async fn dispatch(s: &Session, method: &str, p: &Value) -> Result<Value> {
             let truncated = bytes.len() as u64 > max;
             bytes.truncate(max as usize);
             Ok(
-                json!({"dataBase64": STANDARD.encode(bytes), "truncated": truncated, "contentType": m.content_type(), "etag": m.etag()}),
+                json!({"dataBase64": STANDARD.encode(bytes), "truncated": truncated, "contentType": m.as_ref().and_then(|m| m.content_type()), "etag": m.as_ref().and_then(|m| m.etag())}),
             )
         }
         "filesystem/write" => {
@@ -311,8 +359,8 @@ async fn list(s: &Session, path: &str, p: &Value) -> Result<Value> {
                 }
                 Some(e) if e.path().trim_matches('/') == dir.trim_matches('/') => continue,
                 Some(e) => {
-                    let generated = uri::uri(&s.protocol, e.path());
-                    let checked = uri::path(&generated, &s.protocol)?;
+                    let generated = uri::uri(s.storage_scheme(), e.path());
+                    let checked = uri::path(&generated, s.storage_scheme())?;
                     if !path.is_empty() && !checked.starts_with(&dir) {
                         return Err(error(
                             "backend",
@@ -447,8 +495,8 @@ async fn move_or_copy(s: &Session, method: &str, p: &Value) -> Result<Value> {
     if flag(p, "recursive", false)? {
         return Err(error("unsupported", "Recursive copy is not supported"));
     }
-    let source = uri::path(text(p, "sourceUri")?, &s.protocol)?;
-    let target = uri::path(text(p, "targetUri")?, &s.protocol)?;
+    let source = uri::path(text(p, "sourceUri")?, s.storage_scheme())?;
+    let target = uri::path(text(p, "targetUri")?, s.storage_scheme())?;
     let source = uri::non_root(&source)?;
     let target = uri::non_root(&target)?;
     if source == target || target.starts_with(&format!("{source}/")) {

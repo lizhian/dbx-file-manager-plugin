@@ -130,7 +130,7 @@ impl ConnectionRequest {
             .provider
             .id
             .strip_prefix(&format!("{PLUGIN_ID}."))
-            .filter(|p| PROTOCOLS.contains(p))
+            .filter(|p| PROTOCOLS.contains(p) || *p == "opendal")
             .ok_or_else(|| error("configuration", "Unknown connection provider"))?;
         let c = &self.connection;
         if c.id.trim().is_empty()
@@ -151,6 +151,20 @@ impl ConnectionRequest {
         let protocol = self.protocol()?;
         let c = &self.connection;
         let config = &c.external_config;
+        if protocol == "opendal" {
+            let service = c
+                .connection_secrets
+                .get("service")
+                .ok_or_else(|| error("configuration", "Missing secret-bound service"))?;
+            // Generic options are never read from ordinary configuration or exposed in errors.
+            return crate::generic::build(
+                service,
+                c.connection_secrets
+                    .get("parameters")
+                    .map(String::as_str)
+                    .unwrap_or(""),
+            );
+        }
         if !config.is_object() && !config.is_null() {
             return Err(error("configuration", "external_config must be an object"));
         }

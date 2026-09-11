@@ -2,6 +2,8 @@
 
 面向 macOS Apple Silicon 的 DBX 插件，支持 FTP、SFTP、S3（MinIO）、WebDAV、WebHDFS 和 HDFS Native。
 
+新增 [OpenDAL 通用连接](docs/OPENDAL-GENERIC.md)，按服务和参数配置；当前宿主尚未实现参数加密落盘，仅使用测试凭据。
+
 使用官方 **Host API 1.0**，无需修改宿主。插件提供自定义文件页面，复用宿主连接配置、凭据存储与 Tab，每个连接一个 Tab。
 
 功能：目录浏览、新建目录、重命名、删除、上传下载、图片预览、UTF-8 文本预览与编辑保存。
@@ -10,6 +12,8 @@
 本仓库未修改宿主；阻塞与已完成验证见[开发说明](docs/PLUGIN-DEVELOPMENT.md)。
 
 ## 开发
+
+无需启动 DBX 的浏览器联调：`npm run dev:standalone`，详见[独立调试指南](docs/STANDALONE-DEBUG.md)。
 
 ```bash
 npm ci

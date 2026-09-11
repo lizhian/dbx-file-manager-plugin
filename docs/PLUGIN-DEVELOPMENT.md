@@ -16,6 +16,8 @@
 
 ## 使用
 
+新增“OpenDAL 通用”入口，按服务与 `key=value` 参数配置；见[通用连接说明](OPENDAL-GENERIC.md)及[服务支持清单](OPENDAL-SERVICES.md)。注意：当前宿主 Secret Store 实为明文 SQLite，参数加密存储尚未实现，通用入口仅用于测试凭据。
+
 面向 macOS Apple Silicon，兼容官方 DBX Host API 1.0，不需要宿主补丁。
 在插件中心允许安装未签名开发包并安装 `dist/*.dbxp`，然后在宿主新建 FTP、SFTP、S3、WebDAV、WebHDFS 或 HDFS Native 连接。
 从连接列表打开：一个连接一个宿主 Tab，重复打开激活已有 Tab；连接与凭据由宿主管理。
@@ -27,7 +29,12 @@
 页面支持目录浏览、分页、新建目录、重命名、删除、上传下载、图片预览和 UTF-8 文本编辑。
 上传/下载弹出 macOS 原生文件对话框。协议不支持或只读连接的操作会禁用。
 
+文件列表采用宿主 `feat/issue-16-opendal-file-manager-mvp` 分支的单栏树形表格：单击目录展开、双击进入，顶部返回上级与刷新，行尾提供复制、重命名、下载和删除。单击文件默认预览，下载使用行尾按钮或右键菜单；文本和图片保留各自的文件图标，文本编辑仍保留未保存确认与远端冲突检测。
+右上角“传输列表”弹出传输记录，支持取消，以及打开本次页面下载的文件或所在文件夹。打开本地文件使用原生选择器授权令牌，页面重载或令牌过期后需重新下载才能使用这两个入口。窄屏表格可横向滚动。
+
 ## 构建与测试
+
+需要脱离 DBX 联调真实前后端时，运行 `npm run dev:standalone`，参见[独立调试指南](STANDALONE-DEBUG.md)。
 
 需要 Node.js 22+、Rust 和 macOS 自带 OpenSSH。依赖安装使用锁文件，官方原生打包 CLI 随 npm 可选依赖安装。
 
@@ -57,7 +64,7 @@ no_proxy=localhost,127.0.0.1,::1 NO_PROXY=localhost,127.0.0.1,::1 \
 
 - `frontend/src/`：Vue 自定义页面、连接内状态和 API 1.0 桥接；不导入宿主源码。
 - `backend/src/workbench.rs`：预览快照、分块文本保存、本地文件选择授权；`operations.rs` / `transfer.rs` 复用协议操作和流式传输。
-- `manifest.json`：六种连接字段与统一 Workbench；`tests/schema/manifest.schema.json` 保持官方 `c26ff3f` Schema 原样。
+- `manifest.json`：六种原有连接及 OpenDAL 通用连接字段与统一 Workbench；`tests/schema/manifest.schema.json` 保持官方 `c26ff3f` Schema 原样。
 - `ui/`：构建生成的内联 HTML，避免沙箱加载外部脚本；`scripts/package.mjs` 调用官方原生 CLI。
 
 自定义 RPC 使用 `workbench/*`，返回 `{ok,value}` 或 `{ok:false,error}`，避免宿主字符串错误丢失冲突类型。
@@ -66,9 +73,9 @@ no_proxy=localhost,127.0.0.1,::1 NO_PROXY=localhost,127.0.0.1,::1 \
 
 ## 首版限制
 
-- 文本限 UTF-8、2 MiB；PNG/JPEG/GIF/WebP 限 20 MiB。HTML/XML/SVG 只作为文本显示，不执行、不渲染。
+- 文本限 UTF-8；2 MiB 内可完整预览和编辑，超限仅只读预览前 1000 行（最多 20 MiB，超长行提前截断），不可保存。PNG/JPEG/GIF/WebP 限 20 MiB。HTML/XML/SVG 只作为文本显示，不执行、不渲染。
 - 保存优先使用条件 ETag；不支持条件写的协议先比较完整内容，再写入，无法消除其他客户端在检查与写入之间的竞争。覆盖操作需要明确确认。
 - 文本直接写入远端；写入超时或断连时结果可能不确定，应重新下载检查，不盲目重试。
 - 预览/草稿保留在内存，30 分钟过期；不写磁盘。宿主关闭 Tab 无法拦截，关闭前需要保存。
-- 仅删除文件和空目录；目录重命名可能采用复制后删除，失败时需检查两端。无远程复制入口、递归上传下载、断点续传、图片编辑、Kerberos 或 HDFS HA。
+- 仅删除文件和空目录；目录重命名可能采用复制后删除，失败时需检查两端。支持同目录文件复制，不支持目录复制、递归上传下载、断点续传、图片编辑、Kerberos 或 HDFS HA。
 - FTP 明文；SFTP 依赖 OpenSSH，首次接受未知主机密钥，仅在可信环境使用。
