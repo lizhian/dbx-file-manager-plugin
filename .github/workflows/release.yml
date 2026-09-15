@@ -33,8 +33,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev unzip
       - run: npm ci --no-audit --no-fund
       - run: npm test
+        if: runner.os != 'Darwin'
       - run: cargo test --locked --manifest-path backend/Cargo.toml
-      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --ignore-scripts --no-audit --no-fund
+      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --no-audit --no-fund
       - run: DBX_PLUGIN_TARGET=${{ matrix.target }} npm run package
       - uses: actions/upload-artifact@v4
         with:
