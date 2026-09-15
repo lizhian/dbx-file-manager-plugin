@@ -20,7 +20,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run validate
-          test "$RELEASE_TAG" = "v$(node -p \"require('./manifest.json').version\")"
+          node -e "process.exit(require('./manifest.json').version === process.env.RELEASE_TAG.slice(1) ? 0 : 1)"
   build:
     if: startsWith(github.ref_name, 'v')
     needs: validate
