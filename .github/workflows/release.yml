@@ -1,28 +1,50 @@
-name: Build macOS ARM plugin
+name: Release DBX plugin
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: { contents: read }
 jobs:
   build:
-    runs-on: macos-15
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: windows-x64, runner: windows-2022 }
+          - { target: darwin-x64, runner: macos-15-intel }
+          - { target: darwin-arm64, runner: macos-15 }
+    defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
+        with: { node-version: '22', cache: npm }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev unzip
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: cargo test --locked --manifest-path backend/Cargo.toml
-      - run: npm run package
+      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --ignore-scripts --no-audit --no-fund
+      - run: DBX_PLUGIN_TARGET=${{ matrix.target }} npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: darwin-arm64-unsigned
-          path: |
-            dist/*.dbxp
-            dist/*.artifact.json
+          name: dbx-plugin-${{ matrix.target }}
+          path: dist/*.dbxp
           if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: dbx-plugin-*, path: release-assets, merge-multiple: true }
+      - name: Publish GitHub Release
+        env: { GH_TOKEN: ${{ github.token }}, TAG: ${{ github.ref_name }} }
+        run: gh release create "$TAG" release-assets/*.dbxp --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --notes "Unsigned multi-platform DBX plugin packages. Requires DBX Host API 1.0."
