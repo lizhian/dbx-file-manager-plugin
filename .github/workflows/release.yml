@@ -15,7 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate release tag
-        env: { RELEASE_TAG: ${{ github.ref_name }} }
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           npm ci --no-audit --no-fund
           npm run validate
@@ -47,7 +48,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - run: cargo build --locked --release --manifest-path backend/Cargo.toml
-        env: { CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe }
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
       - run: npm install --global "@dbx-app/plugin-cli@${PLUGIN_CLI_VERSION}" --no-audit --no-fund
       - name: Package candidate
         env:
@@ -68,7 +70,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { pattern: dbx-plugin-*, path: dist, merge-multiple: true }
       - name: Upload release assets
-        env: { GH_TOKEN: ${{ github.token }}, RELEASE_TAG: ${{ github.ref_name }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TAG" --generate-notes --notes "Unsigned multi-platform DBX plugin packages. Requires DBX Host API 1.0."
           gh release upload "$RELEASE_TAG" dist/*.dbxp --repo "$GITHUB_REPOSITORY" --clobber
