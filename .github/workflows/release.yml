@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-2022 }
-          - { target: darwin-x64, runner: macos-15-intel }
-          - { target: darwin-arm64, runner: macos-15 }
+          - { target: linux-x64, runner: ubuntu-24.04, cli: linux-x64-gnu }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm, cli: linux-arm64-gnu }
+          - { target: windows-x64, runner: windows-2022, cli: win32-x64 }
+          - { target: darwin-x64, runner: macos-15-intel, cli: darwin-x64 }
+          - { target: darwin-arm64, runner: macos-15, cli: darwin-arm64 }
     defaults:
       run:
         shell: bash
@@ -35,7 +35,9 @@ jobs:
       - run: npm test
         if: runner.os != 'Darwin'
       - run: cargo test --locked --manifest-path backend/Cargo.toml
-      - run: npm install --global @dbx-app/plugin-cli@0.1.0 --no-audit --no-fund
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
+      - run: npm install --global @dbx-app/plugin-cli-${{ matrix.cli }}@0.1.0 --no-audit --no-fund
       - run: DBX_PLUGIN_TARGET=${{ matrix.target }} npm run package
       - uses: actions/upload-artifact@v4
         with:
