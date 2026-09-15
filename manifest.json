@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.lizhian.file-manager",
   "name": "OpenDAL File Manager",
-  "version": "0.2.1",
+  "version": "0.2.5",
   "publisher": "lizhian",
   "description": "OpenDAL 文件管理：通用服务配置、目录浏览、文件传输、图片预览和文本编辑。",
   "icon": "assets/plugin.svg",
