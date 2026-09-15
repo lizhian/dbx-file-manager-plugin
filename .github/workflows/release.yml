@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 env:
-  PLUGIN_CLI_VERSION: '0.1.6'
+  PLUGIN_CLI_VERSION: '0.1.3'
   AWS_LC_SYS_PREBUILT_NASM: '1'
   PYTHONUTF8: '1'
 jobs:
@@ -49,14 +49,10 @@ jobs:
       - name: Windows toolchain
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
-      - run: cargo build --locked --release --manifest-path backend/Cargo.toml
-        env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
       - run: npm install --global "@dbx-app/plugin-cli@${PLUGIN_CLI_VERSION}" --no-audit --no-fund
       - name: Package candidate
         env:
           DBX_PLUGIN_TARGET: ${{ matrix.target }}
-          CARGO_TARGET_DIR: ${{ github.workspace }}/backend/target
           NO_COLOR: '1'
         run: dbx-plugin package .
       - uses: actions/upload-artifact@v4
